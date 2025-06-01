@@ -40,7 +40,7 @@ const mockItems = [
     description: "A spacious executive desk with storage drawers.",
     rate: 8251.0,
     image:
-      "https://images.unsplash.com/photo-1586201375761-83865001e31b?w=200&q=80",
+      "https://eurekaergonomic.com/cdn/shop/files/3-3.jpg?v=1744109264&width=1946",
   },
   {
     id: 5,
