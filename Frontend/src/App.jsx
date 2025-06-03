@@ -4,11 +4,12 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import DashboardLayout from "./layouts/DashboardLayout";
 import Dashboard from "./pages/Dashboard";
-import InventoryItemsDashboard from "./pages/InventoryItemsDashboard";
 import InventoryItemGroups from "./pages/InventoryItemGroups";
 import AddItemForm from "./pages/AddItemForm";
 import InventorySalesCustomers from "./pages/Sales/InventorySalesCustomers";
 import AddCustomerForm from "./pages/Sales/AddCustomerForm";
+import ItemDetails from "./pages/Items/ItemDetails";
+import InventoryItemsDashboard from "./pages/Items/InventoryItemsDashboard";
 
 const App = () => {
   return (
@@ -25,7 +26,7 @@ const App = () => {
         <Route path="items/add-items" element={<AddItemForm />} />
         <Route path="customers" element={<InventorySalesCustomers />} />
         <Route path="customers/add-customers" element={<AddCustomerForm />} />
-        
+        <Route path="/inventory/:type/items/:id" element={<ItemDetails />} />
 
         {/* Add more child routes here */}
       </Route>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 const mockItems = [
@@ -60,7 +60,7 @@ const mockItems = [
     description: "A versatile storage cabinet with adjustable shelves.",
     rate: 9643.0,
     image:
-      "https://images.unsplash.com/photo-1582582425280-7581cf4c1a04?w=200&q=80",
+      "https://cdn.decornation.in/wp-content/uploads/2020/03/solid-wood-furniture.jpg",
   },
 ];
 
@@ -138,6 +138,13 @@ const InventoryItemsDashboard = () => {
 
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
 
+  useEffect(() => {
+  const newTotalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  if (currentPage > newTotalPages) {
+    setCurrentPage(1);
+  }
+}, [filteredItems]);
+
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       {/* Header */}
@@ -198,7 +205,7 @@ const InventoryItemsDashboard = () => {
           <tbody className="bg-white divide-y divide-gray-100">
             {currentItems.length > 0 ? (
               currentItems.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
+                <tr key={item.id} className="hover:bg-gray-50" onClick={() => navigate(`/inventory/${type}/items/${item.id}`)}>
                   <td className="px-2 py-4">
                     <img
                       src={item.image}
