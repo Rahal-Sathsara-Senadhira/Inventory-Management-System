@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { customers } from "../../assets/assets";
 
 const InventorySalesCustomers = () => {
@@ -8,6 +8,7 @@ const InventorySalesCustomers = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "", direction: "" });
   const [showModal, setShowModal] = useState(false);
+  const navigate = useNavigate();
   const [newItem, setNewItem] = useState({
     name: "",
     company_name: "",
@@ -139,16 +140,17 @@ const InventorySalesCustomers = () => {
           <tbody className="bg-white divide-y divide-gray-100">
             {currentItems.length > 0 ? (
               currentItems.map((item) => (
-                <tr key={item.cus_id} className="hover:bg-gray-50">
+                <tr key={item.cus_id} className="hover:bg-gray-50" onClick={() => navigate(`/inventory/${type}/customers/${item.cus_id}`)}>
                   <td className="px-6 py-4 font-medium text-blue-600 cursor-pointer hover:underline">
                     {item.name}
                   </td>
                   <td className="px-6 py-4 text-gray-700">
-                    {item.company_name}
+                    {item.company_name?item.company_name:"Individual"}
+                    
                   </td>
                   <td className="px-6 py-4 text-gray-700">{item.email}</td>
                   <td className="px-6 py-4 text-gray-600 truncate max-w-xs">
-                    {item.work_phone}
+                    {item.phone}
                   </td>
                   <td className="px-6 py-4 text-right  font-semibold">
                     ${item.receivables.toFixed(2)}

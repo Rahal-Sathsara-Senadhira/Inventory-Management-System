@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import itemRoutes from "./routes/itemRoutes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import connectDB from "./config/db.js";
+import customerRoutes from "./routes/customerRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -19,6 +20,7 @@ app.use(express.json());
 
 // Routes
 app.use("/api/items", itemRoutes);
+app.use("/api/customers", customerRoutes);
 
 // Error Handling Middleware (Optional)
 

@@ -10,6 +10,7 @@ import InventorySalesCustomers from "./pages/Sales/InventorySalesCustomers";
 import AddCustomerForm from "./pages/Sales/AddCustomerForm";
 import ItemDetails from "./pages/Items/ItemDetails";
 import InventoryItemsDashboard from "./pages/Items/InventoryItemsDashboard";
+import CustomerDetails from "./pages/Sales/CustomerDetails.jsx";
 
 const App = () => {
   return (
@@ -27,6 +28,7 @@ const App = () => {
         <Route path="customers" element={<InventorySalesCustomers />} />
         <Route path="customers/add-customers" element={<AddCustomerForm />} />
         <Route path="/inventory/:type/items/:id" element={<ItemDetails />} />
+        <Route path="/inventory/:type/customers/:cus_id" element={<CustomerDetails />} />
 
         {/* Add more child routes here */}
       </Route>
