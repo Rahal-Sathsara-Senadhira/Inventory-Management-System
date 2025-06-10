@@ -49,14 +49,14 @@ const CustomerDetails = () => {
             >
               <FaArrowLeft className="w-4 h-4" />
             </button>
-            <FaRegSquare className="w-6 h-6 text-gray-600" />
+            {/* <FaRegSquare className="w-6 h-6 text-gray-600" /> */}
             <h3 className="text-xl font-semibold truncate">Eva Reilly MD</h3>
           </div>
 
           <div className="flex items-center space-x-2">
             <button className="btn btn-secondary">Mark as Active</button>
             <button className="btn btn-secondary">Delete</button>
-            <button className="text-gray-600 hover:text-red-500">
+            <button className="text-gray-600 hover:text-red-500" onClick={() => navigate(-1)}>
               <FaTimes className="w-5 h-5" />
             </button>
           </div>

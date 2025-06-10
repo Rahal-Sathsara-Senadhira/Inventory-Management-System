@@ -1,9 +1,16 @@
-import React from 'react'
+import { useRef } from "react";
+import StatementToolbar from "./StatementToolbar";
+import StatementPreview from "./StatementPreview";
 
-const StatementsTab = () => {
+export default function StatementTab() {
+  const printRef = useRef();
+
   return (
-    <div>StatementsTab</div>
-  )
+    <div className="space-y-4">
+      <StatementToolbar printRef={printRef} />
+      <div ref={printRef}>
+        <StatementPreview />
+      </div>
+    </div>
+  );
 }
-
-export default StatementsTab
