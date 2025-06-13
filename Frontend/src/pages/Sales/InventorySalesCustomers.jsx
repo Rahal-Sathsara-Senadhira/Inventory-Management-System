@@ -82,7 +82,7 @@ const InventorySalesCustomers = () => {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">All Customers</h1>
-        <Link to={`/inventory/${type}/items/add-items`}>
+        <Link to={`/inventory/${type}/customers/add-customers`}>
           <button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md shadow">
             + New
           </button>

@@ -2,7 +2,7 @@ import { useRef } from "react";
 import StatementToolbar from "./StatementToolbar";
 import StatementPreview from "./StatementPreview";
 
-export default function StatementTab() {
+const StatementTab=()=> {
   const printRef = useRef();
 
   return (
@@ -14,3 +14,5 @@ export default function StatementTab() {
     </div>
   );
 }
+
+export default StatementTab
