@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 const HomeNavbar = () => {
   const navigate = useNavigate();
-  const [token, setToken] = useState(true); // Simulate login
+  const [token, setToken] = useState(false); // Simulate login
   const [showDropdown, setShowDropdown] = useState(false);
 
   const handleInventoryClick = () => {
