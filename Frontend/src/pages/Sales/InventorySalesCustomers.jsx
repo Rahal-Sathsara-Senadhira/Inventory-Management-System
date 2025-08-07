@@ -7,16 +7,7 @@ const InventorySalesCustomers = () => {
   const [items, setItems] = useState(customers);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "", direction: "" });
-  const [showModal, setShowModal] = useState(false);
   const navigate = useNavigate();
-  const [newItem, setNewItem] = useState({
-    name: "",
-    company_name: "",
-    email: "",
-    work_phone: "",
-    receivables: "",
-    unused_credits: "",
-  });
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -57,24 +48,6 @@ const InventorySalesCustomers = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem);
 
-  const handleAddItem = () => {
-    const newItemWithId = {
-      ...newItem,
-      id: Date.now(),
-      rate: parseFloat(newItem.rate),
-    };
-    setItems([newItemWithId, ...items]);
-    setShowModal(false);
-    setNewItem({
-      name: "",
-      company_name: "",
-      email: "",
-      work_phone: "",
-      receivables: "",
-      unused_credits: "",
-    });
-  };
-
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
 
   return (
@@ -101,7 +74,7 @@ const InventorySalesCustomers = () => {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
+      <div className="bg-zinc-50 rounded-lg shadow overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -188,74 +161,7 @@ const InventorySalesCustomers = () => {
         ))}
       </div>
 
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-md p-6 w-full max-w-md space-y-4 shadow-xl">
-            <h2 className="text-xl font-semibold">Add New Item</h2>
-            <input
-              type="text"
-              placeholder="Name"
-              className="w-full px-4 py-2 border rounded"
-              value={newItem.name}
-              onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="SKU"
-              className="w-full px-4 py-2 border rounded"
-              value={newItem.sku}
-              onChange={(e) => setNewItem({ ...newItem, sku: e.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="Type"
-              className="w-full px-4 py-2 border rounded"
-              value={newItem.type}
-              onChange={(e) => setNewItem({ ...newItem, type: e.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="Description"
-              className="w-full px-4 py-2 border rounded"
-              value={newItem.description}
-              onChange={(e) =>
-                setNewItem({ ...newItem, description: e.target.value })
-              }
-            />
-            <input
-              type="number"
-              placeholder="Rate"
-              className="w-full px-4 py-2 border rounded"
-              value={newItem.rate}
-              onChange={(e) => setNewItem({ ...newItem, rate: e.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="Image URL"
-              className="w-full px-4 py-2 border rounded"
-              value={newItem.image}
-              onChange={(e) =>
-                setNewItem({ ...newItem, image: e.target.value })
-              }
-            />
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 rounded bg-gray-300"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddItem}
-                className="px-4 py-2 rounded bg-blue-600 text-white"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 };

@@ -1,54 +1,41 @@
-import React, { useState, useEffect } from 'react';
-import { FaArrowLeft, FaTimes } from 'react-icons/fa';
-import { useNavigate, useParams } from 'react-router-dom';
-import OverviewTab from '../../components/customers/OverviewTab';
-import CommentsTab from '../../components/customers/CommentsTab';
-import TransactionsTab from '../../components/items/TransactionsTab';
-import StatementsTab from "../../components/customers/StatementsTab";
-import CustomSelect from '../../components/ui/CustomSelect';
-import HoverInfo from '../../components/ui/HoverInfo';
+import React, { useState, useEffect } from "react";
+import CustomSelect from "../../components/ui/CustomSelect";
+import HoverInfo from "../../components/ui/HoverInfo";
 
 const AddCustomerForm = () => {
-  const navigate = useNavigate();
-  const { cus_id } = useParams();
   const [displayNameOptions, setDisplayNameOptions] = useState([]);
-  const [activeTab, setActiveTab] = useState("overview");
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case "overview":
-        return <OverviewTab />;
-      case "Comments":
-        return <CommentsTab />;
-      case "Statements":
-        return <StatementsTab />;
-      case "transactions":
-        return <TransactionsTab />;
-      case "Mails":
-        return <MailsTab />;
-      default:
-        return null;
-    }
-  };
 
   const [formData, setFormData] = useState({
-    type: 'Individual',
+    type: "Individual",
     salutation: "",
     firstName: "",
     lastName: "",
-    name: '',
-    sku: '',
-    unit: '',
-    returnable: true,
-    dimensions: { length: '', width: '', height: '' },
-    weight: '',
-    manufacturer: '',
-    brand: '',
-    upc: '',
-    ean: '',
-    mpn: '',
-    isbn: '',
-    image: null
+    workPhone: "",
+    mobile: "",
+    customerEmail: "",
+    companyName: "",
+    billingAddress: {
+      country: "",
+      addressNo: "",
+      street1: "",
+      street2: "",
+      city: "",
+      district: "",
+      zipCode: "",
+      phone: "",
+      fax: "",
+    },
+    shippingAddress: {
+      country: "",
+      addressNo: "",
+      street1: "",
+      street2: "",
+      city: "",
+      district: "",
+      zipCode: "",
+      phone: "",
+      fax: "",
+    },
   });
 
   const options = [
@@ -59,35 +46,107 @@ const AddCustomerForm = () => {
     { value: "Dr", label: "Dr" },
   ];
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    if (name.startsWith('dim_')) {
-      const dimension = name.split('_')[1];
-      setFormData((prev) => ({
-        ...prev,
-        dimensions: { ...prev.dimensions, [dimension]: value }
-      }));
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: type === 'checkbox' ? checked : value
-      }));
+  const validateForm = () => {
+    const errors = [];
+
+    if (!formData.firstName.trim()) {
+      errors.push("First Name is required.");
     }
+
+    if (!formData.customerEmail.trim()) {
+      errors.push("Customer Email is required.");
+    } else if (!/\S+@\S+\.\S+/.test(formData.customerEmail)) {
+      errors.push("Email format is invalid.");
+    }
+
+    if (!formData.mobile.trim()) {
+      errors.push("Mobile number is required.");
+    }
+
+    return errors;
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file && file.size <= 5 * 1024 * 1024) {
-      setFormData({ ...formData, image: file });
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+
+    if (name.includes(".")) {
+      const [section, key] = name.split(".");
+      setFormData((prev) => ({
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [key]: type === "checkbox" ? checked : value,
+        },
+      }));
+    } else if (name.startsWith("dim_")) {
+      const dimension = name.split("_")[1];
+      setFormData((prev) => ({
+        ...prev,
+        dimensions: { ...prev.dimensions, [dimension]: value },
+      }));
     } else {
-      alert('Image must be less than 5MB');
+      setFormData((prev) => ({
+        ...prev,
+        [name]: type === "checkbox" ? checked : value,
+      }));
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log('Submitted:', formData);
-    // TODO: Send formData to backend (e.g., via Axios)
+
+    const errors = validateForm();
+    if (errors.length > 0) {
+      alert(errors.join("\n"));
+      return;
+    }
+
+    // Load existing entries (or empty array)
+    const existing = JSON.parse(
+      localStorage.getItem("pendingCustomers") || "[]"
+    );
+
+    // Add new entry
+    const updated = [...existing, formData];
+
+    // Save to localStorage
+    localStorage.setItem("pendingCustomers", JSON.stringify(updated));
+
+    alert("Customer saved locally! You can sync it later.");
+
+    // Reset the form (optional)
+    setFormData({
+      type: "Individual",
+      salutation: "",
+      firstName: "",
+      lastName: "",
+      workPhone: "",
+      mobile: "",
+      customerEmail: "",
+      companyName: "",
+      billingAddress: {
+        country: "",
+        addressNo: "",
+        street1: "",
+        street2: "",
+        city: "",
+        district: "",
+        zipCode: "",
+        phone: "",
+        fax: "",
+      },
+      shippingAddress: {
+        country: "",
+        addressNo: "",
+        street1: "",
+        street2: "",
+        city: "",
+        district: "",
+        zipCode: "",
+        phone: "",
+        fax: "",
+      },
+    });
   };
 
   useEffect(() => {
@@ -95,7 +154,11 @@ const AddCustomerForm = () => {
     const options = [];
 
     if (firstName && lastName) {
-      if (salutation) options.push({ label: `${salutation} ${firstName} ${lastName}`, value: `1` });
+      if (salutation)
+        options.push({
+          label: `${salutation} ${firstName} ${lastName}`,
+          value: `1`,
+        });
       options.push({ label: `${firstName} ${lastName}`, value: `2` });
       options.push({ label: `${lastName}, ${firstName}`, value: `3` });
     }
@@ -105,209 +168,242 @@ const AddCustomerForm = () => {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-5xl mx-auto p-4 space-y-6">
-      <h2 className="text-2xl font-bold">New Customer</h2>
+      <h2 className="text-2xl font-bold mt-7">New Customer</h2>
 
-      {/* Customer Type Section */}
-      <div className='w-full lg:w-2/3 flex flex-col lg:flex-row'>
-        <label className='lg:w-1/4 flex items-center'>
-        <div className='flex'>
-Customer Type 
-        </div>
-          
-          <span className=" text-gray-500">
-            <HoverInfo text="The contacts which are associated to any Account in CRM is of type Business and the other contacts will be of type Individual." />
+      {/* Customer Type */}
+      <div className="w-full lg:w-2/3 flex flex-col lg:flex-row">
+        <label className="lg:w-1/4 flex items-center">
+          <div className="flex">Customer Type</div>
+          <span className="text-gray-500">
+            <HoverInfo text="Choose 'Business' if the customer represents a company, or 'Individual' for personal customers." />
           </span>
         </label>
-        <div className='flex gap-2'>
+        <div className="flex gap-2">
           <label className="flex items-center gap-2">
-            <input type="radio" name="type" value="Business" checked={formData.type === 'Business'} onChange={handleChange} />
+            <input
+              type="radio"
+              name="type"
+              value="Business"
+              checked={formData.type === "Business"}
+              onChange={handleChange}
+            />
             Business
           </label>
           <label className="flex items-center gap-2">
-            <input type="radio" name="type" value="Individual" checked={formData.type === 'Individual'} onChange={handleChange} />
+            <input
+              type="radio"
+              name="type"
+              value="Individual"
+              checked={formData.type === "Individual"}
+              onChange={handleChange}
+            />
             Individual
           </label>
         </div>
       </div>
 
-      {/* Primary Contact Section */}
-      <div className='w-full lg:w-2/3 flex flex-col lg:flex-row lg:items-center'>
-        <label className='lg:w-1/4 mb-3 lg:mb-0 flex items-center'>
+      {/* Primary Contact */}
+      <div className="w-full lg:w-2/3 flex flex-col lg:flex-row lg:items-center">
+        <label className="lg:w-1/4 mb-3 lg:mb-0 flex items-center">
           Primary Contact
           <span className="ml-2 text-gray-500">
-            <HoverInfo text="The contacts which are associated to any Account in CRM is of type Business and the other contacts will be of type Individual." />
+            <HoverInfo text="Enter the main contact person’s details, including name and optional salutation." />
           </span>
         </label>
-        <div className='flex gap-2 lg:w-3/4 flex-col lg:flex-row'>
+        <div className="flex gap-2 lg:w-3/4 flex-col lg:flex-row">
           <CustomSelect
             options={options}
             placeholder="Salutation"
-            onChange={(value) => handleChange({ target: { name: "salutation", value } })}
+            onChange={(value) =>
+              handleChange({ target: { name: "salutation", value } })
+            }
           />
-          <input name="firstName" value={formData.firstName} onChange={handleChange} required className="border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400" placeholder="First Name*" />
-          <input name="lastName" value={formData.lastName} onChange={handleChange} required className="border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400" placeholder="Last Name*" />
+          <input
+            name="firstName"
+            value={formData.firstName}
+            onChange={handleChange}
+            required
+            placeholder="First Name*"
+            className="border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+          />
+          <input
+            name="lastName"
+            value={formData.lastName}
+            onChange={handleChange}
+            required
+            placeholder="Last Name*"
+            className="border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+          />
         </div>
       </div>
 
-      {/* Customer Display Name Section */}
-      <div className='w-full lg:w-2/3 flex flex-col lg:flex-row lg:items-center'>
-        <label className='lg:w-1/4 mb-3 lg:mb-0 flex items-center'>
-          Customer Display Name
+      {/* Display Name */}
+      <div className="w-full lg:w-2/3 flex flex-col lg:flex-row lg:items-center">
+        <label className="lg:w-1/4 mb-3 lg:mb-0 flex flex-wrap items-stretch">
+          <label>Customer &nbsp;</label>
+          <label>Display&nbsp;</label>
+          <label>Name</label>
           <span className="ml-2 text-gray-500">
-            <HoverInfo text="The contacts which are associated to any Account in CRM is of type Business and the other contacts will be of type Individual." />
+            <HoverInfo text="Select how the customer's name should appear in records and documents." />
           </span>
         </label>
-        <div className='flex gap-2 w-full lg:w-3/4'>
-          <div className='w-full lg:w-3/4'>
-            <CustomSelect
-              options={displayNameOptions}
-              onChange={(value) => console.log("Selected:", value)}
-            />
-          </div>
+        <div className="flex gap-2 w-full lg:w-3/4">
+          <CustomSelect
+            options={displayNameOptions}
+            onChange={(value) => console.log("Selected:", value)}
+          />
         </div>
       </div>
 
+      {/* Company Name */}
       <div className="w-full lg:w-2/3 flex flex-col lg:flex-row lg:items-center">
-  <label className="lg:w-1/4 mb-3 lg:mb-0 flex items-stretch">
-    Customer Display Name ⓘ
-    <span className="ml-2 text-gray-500">k
-      <HoverInfo text="The contacts which are associated to any Account in CRM is of type Business and the other contacts will be of type Individual." />
-    </span>
-  </label>
-  <div className="flex gap-2 w-full lg:w-3/4">
-    <div className="w-full lg:w-3/4">
-      <input
-        name="CustomerEmail"
-        value={formData.customerEmail}
-        onChange={handleChange}
-        required
-        className="w-full border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
-        placeholder="Customer Email*"
-      />
-    </div>
-  </div>
-</div>
-
-
-      {/* Form Fields */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <input name="name" value={formData.name} onChange={handleChange} required className="border p-2 rounded" placeholder="Name*" />
-        <input name="sku" value={formData.sku} onChange={handleChange} className="border p-2 rounded" placeholder="SKU" />
-
-        <input name="unit" value={formData.unit} onChange={handleChange} required className="border p-2 rounded" placeholder="Unit*" />
-        <label className="flex items-center gap-2">
-          <input type="checkbox" name="returnable" checked={formData.returnable} onChange={handleChange} />
-          Returnable Item
+        <label className="lg:w-1/4 mb-3 lg:mb-0 flex flex-wrap items-stretch">
+          <label>Company &nbsp;</label>
+          <label>Name</label>
+          <span className="ml-2 text-gray-500">
+            <HoverInfo text="If applicable, enter the name of the company the customer is associated with." />
+          </span>
         </label>
-
-        <div className="flex items-center gap-2">
-          <input name="dim_length" value={formData.dimensions.length} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Length" />
-          <input name="dim_width" value={formData.dimensions.width} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Width" />
-          <input name="dim_height" value={formData.dimensions.height} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Height" />
+        <div className="w-full lg:w-3/4">
+          <input
+            name="companyName"
+            value={formData.companyName}
+            onChange={handleChange}
+            className="w-full border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+          />
         </div>
-
-        <input name="weight" value={formData.weight} onChange={handleChange} className="border p-2 rounded" placeholder="Weight" />
-        <input name="manufacturer" value={formData.manufacturer} onChange={handleChange} className="border p-2 rounded" placeholder="Manufacturer" />
-        <input name="brand" value={formData.brand} onChange={handleChange} className="border p-2 rounded" placeholder="Brand" />
-        <input name="upc" value={formData.upc} onChange={handleChange} className="border p-2 rounded" placeholder="UPC" />
-        <input name="ean" value={formData.ean} onChange={handleChange} className="border p-2 rounded" placeholder="EAN" />
-        <input name="mpn" value={formData.mpn} onChange={handleChange} className="border p-2 rounded" placeholder="MPN" />
-        <input name="isbn" value={formData.isbn} onChange={handleChange} className="border p-2 rounded" placeholder="ISBN" />
       </div>
 
-      {/* Image Upload */}
-      <div className="mt-4">
-        <label className="block mb-2 font-medium">Upload Image (Max 5MB):</label>
-        <input type="file" accept="image/*" onChange={handleImageUpload} />
-        {formData.image && (
-          <div className="mt-2">
-            <img
-              src={URL.createObjectURL(formData.image)}
-              alt="Preview"
-              className="max-h-32 rounded border"
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex gap-4 mt-6">
-        <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
-        <button type="button" onClick={() => console.log('Cancelled')} className="px-6 py-2 bg-gray-300 rounded">Cancel</button>
-      </div>
-
-      {/* Header and Tabs */}
-      <div className="flex flex-col w-full bg-white rounded shadow space-y-4">
-        <div className="sticky top-0 bg-white pt-3 px-4">
-          <div className="">{cus_id}</div>
-          <div className="flex items-center justify-between border-b pb-2">
-            <div className="flex items-center space-x-2">
-              <button className="btn btn-secondary p-2" onClick={() => navigate(-1)}>
-                <FaArrowLeft className="w-4 h-4" />
-              </button>
-              <h3 className="text-xl font-semibold truncate">Eva Reilly MD</h3>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <button className="btn btn-secondary">Mark as Active</button>
-              <button className="btn btn-secondary">Delete</button>
-              <button className="text-gray-600 hover:text-red-500" onClick={() => navigate(-1)}>
-                <FaTimes className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="border-b border-gray-200">
-            <ul className="flex space-x-6 text-sm font-medium text-gray-600">
-              <li
-                className={`cursor-pointer py-2 border-b-2 ${
-                  activeTab === "overview" ? "border-blue-500 text-blue-600" : "border-transparent"
-                }`}
-                onClick={() => setActiveTab("overview")}
-              >
-                Overview
-              </li>
-              <li
-                className={`cursor-pointer py-2 border-b-2 ${
-                  activeTab === "Comments" ? "border-blue-500 text-blue-600" : "border-transparent"
-                }`}
-                onClick={() => setActiveTab("Comments")}
-              >
-                Comments
-              </li>
-              <li
-                className={`cursor-pointer py-2 border-b-2 ${
-                  activeTab === "transactions" ? "border-blue-500 text-blue-600" : "border-transparent"
-                }`}
-                onClick={() => setActiveTab("transactions")}
-              >
-                Transactions
-              </li>
-              <li
-                className={`cursor-pointer py-2 border-b-2 ${
-                  activeTab === "Mails" ? "border-blue-500 text-blue-600" : "border-transparent"
-                }`}
-                onClick={() => setActiveTab("Mails")}
-              >
-                Mails
-              </li>
-              <li
-                className={`cursor-pointer py-2 border-b-2 ${
-                  activeTab === "Statements" ? "border-blue-500 text-blue-600" : "border-transparent"
-                }`}
-                onClick={() => setActiveTab("Statements")}
-              >
-                Statements
-              </li>
-            </ul>
-          </div>
+      {/* Customer Email */}
+      <div className="w-full lg:w-2/3 flex flex-col lg:flex-row lg:items-center">
+        <label className="lg:w-1/4 mb-3 lg:mb-0 flex flex-wrap items-stretch">
+          <label>Customer &nbsp;</label>
+          <label>Email</label>
+          <span className="ml-2 text-gray-500">
+            <HoverInfo text="Enter the customer's email address for communication and records." />
+          </span>
+        </label>
+        <div className="w-full lg:w-3/4">
+          <input
+            name="customerEmail"
+            value={formData.customerEmail}
+            onChange={handleChange}
+            className="w-full border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+          />
         </div>
+      </div>
 
-        {/* Tab Content */}
-        <div className="bg-white shadow rounded-lg">{renderTabContent()}</div>
+      {/* Customer Phone */}
+      <div className="w-full lg:w-2/3 flex flex-col lg:flex-row lg:items-center">
+        <label className="lg:w-1/4 mb-3 lg:mb-0 flex flex-wrap items-stretch">
+          <label>Customer &nbsp;</label>
+          <label>Phone</label>
+          <span className="ml-2 text-gray-500">
+            <HoverInfo text="Provide both work and mobile phone numbers for easier contact." />
+          </span>
+        </label>
+        <div className="flex gap-2 lg:w-3/4 flex-col lg:flex-row">
+          <input
+            name="workPhone"
+            value={formData.workPhone}
+            onChange={handleChange}
+            placeholder="Work Phone*"
+            className="border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+          />
+          <input
+            name="mobile"
+            value={formData.mobile}
+            onChange={handleChange}
+            placeholder="Mobile*"
+            className="border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-10"></div>
+
+      {/* Billing Address */}
+      <AddressSection
+        title="Billing Address"
+        namePrefix="billingAddress"
+        formData={formData.billingAddress}
+        onChange={handleChange}
+      />
+
+      {/* Shipping Address */}
+      <AddressSection
+        title="Shipping Address"
+        namePrefix="shippingAddress"
+        formData={formData.shippingAddress}
+        onChange={handleChange}
+      />
+
+      {/* Actions */}
+      <div className="flex gap-4 py-12">
+        <button
+          type="submit"
+          className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={() => console.log("Cancelled")}
+          className="px-6 py-2 bg-gray-300 rounded"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() =>
+            console.log(
+              JSON.parse(localStorage.getItem("pendingCustomers") || "[]")
+            )
+          }
+        >
+          View Unsynced Customers
+        </button>
       </div>
     </form>
+  );
+};
+
+// Reusable address component
+const AddressSection = ({ title, namePrefix, formData, onChange }) => {
+  const fields = [
+    { label: "Country", name: "country" },
+    { label: "Address No.", name: "addressNo" },
+    { label: "Street 1", name: "street1" },
+    { label: "Street 2", name: "street2" },
+    { label: "City", name: "city" },
+    { label: "District", name: "district" },
+    { label: "Zip Code", name: "zipCode" },
+    { label: "Phone", name: "phone" },
+    { label: "Fax Number", name: "fax" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <label className="font-semibold text-2xl">{title}</label>
+      {fields.map((f) => (
+        <div
+          key={f.name}
+          className="w-full flex flex-col lg:flex-row lg:items-center"
+        >
+          <label className="lg:w-1/4 mb-3 lg:mb-0 flex items-stretch">
+            {f.label}
+          </label>
+          <div className="w-full lg:w-3/4">
+            <input
+              name={`${namePrefix}.${f.name}`}
+              value={formData[f.name]}
+              onChange={onChange}
+              placeholder={f.label}
+              className="w-full border p-1 px-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+            />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 };
 

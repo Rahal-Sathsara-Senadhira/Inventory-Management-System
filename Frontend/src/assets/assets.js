@@ -1,9 +1,14 @@
 import DashboardBanner from './DashboardBanner2.png'
 import ItemGroupBanner from './InventoryItemGroupsBanner.png'
 
+import Dark_MainLogo from './Dark_MainLogo.png'
+import HeroImage from './HeroImage.png'
+
 export const assets ={
     DashboardBanner,
-    ItemGroupBanner
+    ItemGroupBanner,
+    Dark_MainLogo,
+    HeroImage
 }
 
 export const customers = [
@@ -225,5 +230,80 @@ export const customers = [
   },
 ];
 
+
+
+
+
+/* 
+
+export const sampleCustomers = [
+  {
+    type: "Individual",
+    salutation: "Mr",
+    firstName: "John",
+    lastName: "Doe",
+    workPhone: "+1 123-456-7890",
+    mobile: "+1 987-654-3210",
+    customerEmail: "john.doe@example.com",
+    companyName: "N/A",
+    billingAddress: {
+      country: "USA",
+      addressNo: "221B",
+      street1: "Baker Street",
+      street2: "",
+      city: "New York",
+      district: "Manhattan",
+      zipCode: "10001",
+      phone: "+1 123-456-7890",
+      fax: "+1 123-456-7899"
+    },
+    shippingAddress: {
+      country: "USA",
+      addressNo: "221B",
+      street1: "Baker Street",
+      street2: "",
+      city: "New York",
+      district: "Manhattan",
+      zipCode: "10001",
+      phone: "+1 987-654-3210",
+      fax: "+1 987-654-3219"
+    }
+  },
+  {
+    type: "Business",
+    salutation: "Dr",
+    firstName: "Emily",
+    lastName: "Smith",
+    workPhone: "+44 20 7946 0958",
+    mobile: "+44 7700 900123",
+    customerEmail: "emily.smith@techcorp.co.uk",
+    companyName: "TechCorp Ltd",
+    billingAddress: {
+      country: "UK",
+      addressNo: "45A",
+      street1: "Tech Park",
+      street2: "Innovation Road",
+      city: "London",
+      district: "Westminster",
+      zipCode: "SW1A 1AA",
+      phone: "+44 20 7946 0958",
+      fax: "+44 20 7946 0959"
+    },
+    shippingAddress: {
+      country: "UK",
+      addressNo: "12",
+      street1: "Delivery Lane",
+      street2: "",
+      city: "Reading",
+      district: "Berkshire",
+      zipCode: "RG1 8DP",
+      phone: "+44 7700 900123",
+      fax: "+44 7700 900124"
+    }
+  }
+];
+
+
+*/
 export default customers;
 
