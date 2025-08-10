@@ -100,6 +100,16 @@ const Sidebar = () => {
             >
               Customers
             </NavLink>
+            <NavLink
+              to={`/inventory/${type}/salesOrders`}
+              className={({ isActive }) =>
+                `block p-2 rounded hover:bg-slate-700 ${
+                  isActive ? "bg-slate-800" : ""
+                }`
+              }
+            >
+              Sales Orders
+            </NavLink>
             <div className="p-2 text-sm text-slate-400">Composite Items</div>
             <div className="p-2 text-sm text-slate-400">Item Groups</div>
             <NavLink

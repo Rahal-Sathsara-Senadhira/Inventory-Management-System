@@ -11,6 +11,7 @@ import AddCustomerForm from "./pages/Sales/AddCustomerForm";
 import ItemDetails from "./pages/Items/ItemDetails";
 import InventoryItemsDashboard from "./pages/Items/InventoryItemsDashboard";
 import CustomerDetails from "./pages/Sales/CustomerDetails.jsx";
+import SalesOrders from "./pages/Sales/SalesOrders.jsx";
 
 const App = () => {
   return (
@@ -23,6 +24,7 @@ const App = () => {
       <Route path="/inventory/:type" element={<DashboardLayout />}>
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="items" element={<InventoryItemsDashboard />} />
+        <Route path="salesOrders" element={<SalesOrders />} />
         <Route path="itemGroups" element={<InventoryItemGroups />} />
         <Route path="items/add-items" element={<AddItemForm />} />
         <Route path="customers" element={<InventorySalesCustomers />} />

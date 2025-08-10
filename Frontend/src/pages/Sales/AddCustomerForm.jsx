@@ -1,8 +1,22 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import CustomSelect from "../../components/ui/CustomSelect";
 import HoverInfo from "../../components/ui/HoverInfo";
+import { AppContext } from "../../context/AppContext";
+
+const emailRegex = /^\S+@\S+\.\S+$/;
+const phoneAllowRegex = /^[0-9+\-()\s]+$/;
+const allowedSalutations = new Set(["Mr", "Mrs", "Miss", "Ms", "Dr", ""]);
+
+const normEmail = (s) => (s || "").trim().toLowerCase();
+const trim = (s) => (s || "").trim();
+const digitsOnly = (s) => (s.match(/\d/g) || []).join("");
 
 const AddCustomerForm = () => {
+  const { addCustomer, customers } = useContext(AppContext); // get helpers + list for duplicate checks
+  const navigate = useNavigate();
+  const { type } = useParams(); // /inventory/:type/customers/add-customers
+
   const [displayNameOptions, setDisplayNameOptions] = useState([]);
 
   const [formData, setFormData] = useState({
@@ -46,21 +60,57 @@ const AddCustomerForm = () => {
     { value: "Dr", label: "Dr" },
   ];
 
+  // -------- validation (logic only, UI unchanged) --------
   const validateForm = () => {
     const errors = [];
 
-    if (!formData.firstName.trim()) {
-      errors.push("First Name is required.");
+    const firstName = trim(formData.firstName);
+    const lastName = trim(formData.lastName);
+    const email = normEmail(formData.customerEmail);
+    const mobile = trim(formData.mobile);
+    const workPhone = trim(formData.workPhone);
+    const company = trim(formData.companyName);
+    const sal = trim(formData.salutation);
+
+    // Required basics
+    if (!firstName) errors.push("First Name is required.");
+    if (!email) errors.push("Customer Email is required.");
+    if (email && !emailRegex.test(email)) errors.push("Email format is invalid.");
+    if (!mobile) errors.push("Mobile number is required.");
+
+    // Length sanity
+    if (firstName.length > 50) errors.push("First Name is too long (max 50).");
+    if (lastName.length > 50) errors.push("Last Name is too long (max 50).");
+
+    // Business rule
+    if (formData.type === "Business" && !company) {
+      errors.push("Company Name is required for Business customers.");
     }
 
-    if (!formData.customerEmail.trim()) {
-      errors.push("Customer Email is required.");
-    } else if (!/\S+@\S+\.\S+/.test(formData.customerEmail)) {
-      errors.push("Email format is invalid.");
-    }
+    // Salutation whitelist
+    if (!allowedSalutations.has(sal)) errors.push("Invalid salutation.");
 
-    if (!formData.mobile.trim()) {
-      errors.push("Mobile number is required.");
+    // Phone format + min digits
+    const checkPhone = (label, val) => {
+      if (!val) return;
+      if (!phoneAllowRegex.test(val)) errors.push(`${label} has invalid characters.`);
+      if (digitsOnly(val).length < 7) errors.push(`${label} seems too short (min 7 digits).`);
+    };
+    checkPhone("Mobile", mobile);
+    checkPhone("Work Phone", workPhone);
+
+    // Duplicate checks (client-side hint; server must still enforce)
+    if (
+      email &&
+      customers.some((c) => normEmail(c.customerEmail) === email)
+    ) {
+      errors.push("This email is already registered.");
+    }
+    if (
+      mobile &&
+      customers.some((c) => digitsOnly(c.mobile || "") === digitsOnly(mobile))
+    ) {
+      errors.push("This mobile number is already registered.");
     }
 
     return errors;
@@ -92,7 +142,7 @@ const AddCustomerForm = () => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     const errors = validateForm();
@@ -101,69 +151,54 @@ const AddCustomerForm = () => {
       return;
     }
 
-    // Load existing entries (or empty array)
-    const existing = JSON.parse(
-      localStorage.getItem("pendingCustomers") || "[]"
-    );
+    // Display name (trimmed)
+    const displayName =
+      trim(formData.salutation) && trim(formData.firstName) && trim(formData.lastName)
+        ? `${trim(formData.salutation)} ${trim(formData.firstName)} ${trim(formData.lastName)}`
+        : trim(formData.firstName) && trim(formData.lastName)
+        ? `${trim(formData.firstName)} ${trim(formData.lastName)}`
+        : trim(formData.companyName) || "Unnamed Customer";
 
-    // Add new entry
-    const updated = [...existing, formData];
+    // Payload normalization (logic only)
+    const payload = {
+      type: formData.type,
+      salutation: trim(formData.salutation),
+      firstName: trim(formData.firstName),
+      lastName: trim(formData.lastName),
+      name: displayName.trim(),
+      company_name: trim(formData.companyName),
+      customerEmail: normEmail(formData.customerEmail),
+      workPhone: trim(formData.workPhone),
+      mobile: trim(formData.mobile),
+      receivables: 0,
+      unused_credits: 0,
+      billingAddress: { ...formData.billingAddress },
+      shippingAddress: { ...formData.shippingAddress },
+    };
 
-    // Save to localStorage
-    localStorage.setItem("pendingCustomers", JSON.stringify(updated));
-
-    alert("Customer saved locally! You can sync it later.");
-
-    // Reset the form (optional)
-    setFormData({
-      type: "Individual",
-      salutation: "",
-      firstName: "",
-      lastName: "",
-      workPhone: "",
-      mobile: "",
-      customerEmail: "",
-      companyName: "",
-      billingAddress: {
-        country: "",
-        addressNo: "",
-        street1: "",
-        street2: "",
-        city: "",
-        district: "",
-        zipCode: "",
-        phone: "",
-        fax: "",
-      },
-      shippingAddress: {
-        country: "",
-        addressNo: "",
-        street1: "",
-        street2: "",
-        city: "",
-        district: "",
-        zipCode: "",
-        phone: "",
-        fax: "",
-      },
-    });
+    try {
+      // works for both sync (in-memory) and async (API-backed) contexts
+      const saved = await Promise.resolve(addCustomer(payload));
+      alert(saved && saved.cus_id ? `Customer saved with ID: ${saved.cus_id}` : "Customer saved.");
+      navigate(`/inventory/${type}/customers`);
+    } catch (err) {
+      alert(err?.message || "Failed to save customer");
+    }
   };
 
   useEffect(() => {
     const { salutation, firstName, lastName } = formData;
-    const options = [];
+    const s = trim(salutation);
+    const f = trim(firstName);
+    const l = trim(lastName);
 
-    if (firstName && lastName) {
-      if (salutation)
-        options.push({
-          label: `${salutation} ${firstName} ${lastName}`,
-          value: `1`,
-        });
-      options.push({ label: `${firstName} ${lastName}`, value: `2` });
-      options.push({ label: `${lastName}, ${firstName}`, value: `3` });
+    const opts = [];
+    if (f && l) {
+      if (s) opts.push({ label: `${s} ${f} ${l}`, value: "1" });
+      opts.push({ label: `${f} ${l}`, value: "2" });
+      opts.push({ label: `${l}, ${f}`, value: "3" });
     }
-
-    setDisplayNameOptions(options);
+    setDisplayNameOptions(opts);
   }, [formData]);
 
   return (
@@ -354,11 +389,11 @@ const AddCustomerForm = () => {
           Cancel
         </button>
         <button
+          type="button"
           onClick={() =>
-            console.log(
-              JSON.parse(localStorage.getItem("pendingCustomers") || "[]")
-            )
+            console.log(JSON.parse(localStorage.getItem("pendingCustomers") || "[]"))
           }
+          className="px-6 py-2 bg-gray-300 rounded"
         >
           View Unsynced Customers
         </button>
@@ -367,7 +402,7 @@ const AddCustomerForm = () => {
   );
 };
 
-// Reusable address component
+// Reusable address component (UI unchanged)
 const AddressSection = ({ title, namePrefix, formData, onChange }) => {
   const fields = [
     { label: "Country", name: "country" },
@@ -385,10 +420,7 @@ const AddressSection = ({ title, namePrefix, formData, onChange }) => {
     <div className="space-y-6">
       <label className="font-semibold text-2xl">{title}</label>
       {fields.map((f) => (
-        <div
-          key={f.name}
-          className="w-full flex flex-col lg:flex-row lg:items-center"
-        >
+        <div key={f.name} className="w-full flex flex-col lg:flex-row lg:items-center">
           <label className="lg:w-1/4 mb-3 lg:mb-0 flex items-stretch">
             {f.label}
           </label>

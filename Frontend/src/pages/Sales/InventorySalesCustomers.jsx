@@ -1,14 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { customers } from "../../assets/assets";
+import { AppContext } from "../../context/AppContext";
+
+
 
 const InventorySalesCustomers = () => {
   const { type } = useParams();
-  const [items, setItems] = useState(customers);
+  const navigate = useNavigate();
+  const { customers } = useContext(AppContext); // ✅ from context
+
   const [searchQuery, setSearchQuery] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "", direction: "" });
-  const navigate = useNavigate();
-
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
@@ -20,7 +22,7 @@ const InventorySalesCustomers = () => {
     setSortConfig({ key, direction });
   };
 
-  const sortedItems = [...items].sort((a, b) => {
+  const sortedItems = [...customers].sort((a, b) => {
     if (!sortConfig.key) return 0;
     const aValue = a[sortConfig.key] ?? "";
     const bValue = b[sortConfig.key] ?? "";
@@ -39,7 +41,7 @@ const InventorySalesCustomers = () => {
   const filteredItems = sortedItems.filter((item) => {
     const query = searchQuery.toLowerCase();
     return (
-      item.name.toLowerCase().includes(query) ||
+      item.name?.toLowerCase().includes(query) ||
       item.company_name?.toLowerCase().includes(query)
     );
   });
@@ -48,7 +50,7 @@ const InventorySalesCustomers = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem);
 
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage) || 1;
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
@@ -66,9 +68,12 @@ const InventorySalesCustomers = () => {
       <div className="mb-4">
         <input
           type="text"
-          placeholder="Search items..."
+          placeholder="Search customers..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setCurrentPage(1); // reset to page 1 on new search
+          }}
           className="w-full md:w-1/3 px-4 py-2 border border-gray-300 rounded-md"
         />
       </div>
@@ -113,30 +118,35 @@ const InventorySalesCustomers = () => {
           <tbody className="bg-white divide-y divide-gray-100">
             {currentItems.length > 0 ? (
               currentItems.map((item) => (
-                <tr key={item.cus_id} className="hover:bg-gray-50" onClick={() => navigate(`/inventory/${type}/customers/${item.cus_id}`)}>
+                <tr
+                  key={item.cus_id} 
+                  className="hover:bg-gray-50"
+                  onClick={() =>
+                    navigate(`/inventory/${type}/customers/${item.cus_id}`)
+                  }
+                >
                   <td className="px-6 py-4 font-medium text-blue-600 cursor-pointer hover:underline">
                     {item.name}
                   </td>
                   <td className="px-6 py-4 text-gray-700">
-                    {item.company_name?item.company_name:"Individual"}
-                    
+                    {item.company_name ? item.company_name : "Individual"}
                   </td>
-                  <td className="px-6 py-4 text-gray-700">{item.email}</td>
+                  <td className="px-6 py-4 text-gray-700">{item.customerEmail}</td>
                   <td className="px-6 py-4 text-gray-600 truncate max-w-xs">
-                    {item.phone}
+                    {item.workPhone}
                   </td>
-                  <td className="px-6 py-4 text-right  font-semibold">
-                    ${item.receivables.toFixed(2)}
+                  <td className="px-6 py-4 text-right font-semibold">
+                    ${item.receivables?.toFixed(2) || "0.00"}
                   </td>
-                  <td className="px-6 py-4 text-right  font-semibold">
-                    ${item.unused_credits.toFixed(2)}
+                  <td className="px-6 py-4 text-right font-semibold">
+                    ${item.unused_credits?.toFixed(2) || "0.00"}
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
                 <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
-                  No items found.
+                  No customers found.
                 </td>
               </tr>
             )}
@@ -160,8 +170,6 @@ const InventorySalesCustomers = () => {
           </button>
         ))}
       </div>
-
-      
     </div>
   );
 };
