@@ -12,6 +12,7 @@ import ItemDetails from "./pages/Items/ItemDetails";
 import InventoryItemsDashboard from "./pages/Items/InventoryItemsDashboard";
 import CustomerDetails from "./pages/Sales/CustomerDetails.jsx";
 import SalesOrders from "./pages/Sales/SalesOrders.jsx";
+import AddSalesOrders from "./pages/Sales/AddSalesOrders.jsx";
 
 const App = () => {
   return (
@@ -25,6 +26,7 @@ const App = () => {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="items" element={<InventoryItemsDashboard />} />
         <Route path="salesOrders" element={<SalesOrders />} />
+        <Route path="salesOrders/add-salesOrders" element={<AddSalesOrders />} />
         <Route path="itemGroups" element={<InventoryItemGroups />} />
         <Route path="items/add-items" element={<AddItemForm />} />
         <Route path="customers" element={<InventorySalesCustomers />} />
