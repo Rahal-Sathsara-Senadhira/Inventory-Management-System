@@ -8,13 +8,13 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
 
-// ⬇️ Use a NAMED import to match your routes/customer.js export
-// (routes/customer.js should export: export const customersRouter = Router();)
+// Import routes
+import { salesOrdersRouter } from "./routes/salesOrders.js";
 import { customersRouter } from "./routes/customer.js";
+import { salespersonsRouter } from "./routes/salesPersons.js";
 
 const PORT = process.env.PORT || 5000;
-const FRONTEND_ORIGIN =
-  process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 
 if (!MONGO_URI) {
@@ -25,42 +25,10 @@ if (!MONGO_URI) {
 const app = express();
 app.set("trust proxy", 1);
 
-/** Express 5–safe in-place sanitizer (blocks keys with $ or .), array-aware */
-const sanitizeInPlace = (val) => {
-  if (!val || typeof val !== "object") return;
-  if (Array.isArray(val)) {
-    for (const v of val) sanitizeInPlace(v);
-    return;
-  }
-  for (const key of Object.keys(val)) {
-    if (key.startsWith("$") || key.includes(".")) {
-      delete val[key];
-      continue;
-    }
-    const v = val[key];
-    if (v && typeof v === "object") sanitizeInPlace(v);
-  }
-};
-
 // Security & basics
-app.use(
-  helmet({
-    // Vite HMR + local dev often needs relaxed CSP; keep off in dev
-    contentSecurityPolicy: false,
-    referrerPolicy: { policy: "no-referrer" },
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-);
+app.use(helmet());
 app.use(compression());
 app.use(express.json({ limit: "200kb" }));
-app.use((req, _res, next) => {
-  try {
-    sanitizeInPlace(req.body);
-    sanitizeInPlace(req.params);
-    sanitizeInPlace(req.query);
-  } catch {}
-  next();
-});
 app.use(morgan("dev"));
 
 // CORS (credentials + explicit origin). Handles preflight automatically.
@@ -72,47 +40,32 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Rate limit (writes)
-const writeLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Routes
+app.use("/api/sales-orders", salesOrdersRouter);  // Sales Orders Routes
+app.use("/api/customers", customersRouter);
+app.use("/api/salespersons", salespersonsRouter);
 
-// Health
+// Health Check
 app.get("/health", async (_req, res) => {
   const dbOk = mongoose.connection.readyState === 1; // 1 = connected
   res.json({ ok: true, db: dbOk ? "up" : "down" });
 });
 
-// Auth/tenant stub
-app.use((req, _res, next) => {
-  // In prod, replace with real auth and set req.user.tenantId accordingly.
-  req.user = { tenantId: "demo-tenant" };
-  next();
-});
-
-// Routes
-app.use("/api/customers", writeLimiter, customersRouter);
-
-// 404
+// 404 Handler
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 
 // Centralized error handler
 app.use((err, _req, res, _next) => {
   console.error("API Error:", err);
   const status = err.status || 500;
-  const msg =
-    err.publicMessage || (status === 500 ? "Internal Server Error" : "Bad Request");
+  const msg = err.publicMessage || (status === 500 ? "Internal Server Error" : "Bad Request");
   res.status(status).json({ error: msg });
 });
 
-// Start
+// Start server
 let server;
 (async () => {
   try {
-    // Optional: mongoose.set("strictQuery", true);
     await mongoose.connect(MONGO_URI);
     console.log("✅ Mongo connected");
 
@@ -138,12 +91,15 @@ const shutdown = async (signal) => {
     process.exit(1);
   }
 };
+
 ["SIGINT", "SIGTERM"].forEach((sig) =>
   process.on(sig, () => shutdown(sig))
 );
+
 process.on("unhandledRejection", (e) => {
   console.error("Unhandled Rejection:", e);
 });
+
 process.on("uncaughtException", (e) => {
   console.error("Uncaught Exception:", e);
 });

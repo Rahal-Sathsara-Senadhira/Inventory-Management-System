@@ -8,9 +8,9 @@ const API_BASE = import.meta.env?.VITE_API_BASE || ""; // set in .env during dev
 const fmtMoney = (n) => (isNaN(n) ? "0.000" : Number(n).toFixed(3));
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () =>
-  (typeof crypto !== "undefined" && crypto.randomUUID
+  typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2));
+    : Math.random().toString(36).slice(2);
 const asNumberOrZero = (v) => (v === "" || v === null ? 0 : Number(v));
 
 /* Small tooltip icon */
@@ -309,7 +309,7 @@ export default function AddSalesOrders({
   const priceLists = priceListsProp;
   const deliveryMethods = deliveryMethodsProp;
   const paymentTerms = paymentTermsProp;
-  const salespersons = salespersonsProp;
+  const [salespersons, setSalespersons] = useState([]);
 
   const [saving, setSaving] = useState(false);
   const [showShipTax, setShowShipTax] = useState(false);
@@ -369,6 +369,32 @@ export default function AddSalesOrders({
     };
   }, [form.customerId]);
 
+  useEffect(() => {
+    fetch(`${API_BASE}/api/salespersons`)
+      .then((response) => response.json())
+      .then((data) => setSalespersons(data))
+      .catch((error) => console.error("Failed to load salespersons:", error));
+  }, []);
+
+  useEffect(() => {
+    const fetchOrderNumber = async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/sales-orders/next-order-number`
+        );
+        if (!res.ok) {
+          throw new Error("Failed to fetch next order number");
+        }
+        const data = await res.json();
+        setForm((f) => ({ ...f, salesOrderNo: data.nextOrderNumber }));
+      } catch (e) {
+        console.error("Failed to fetch next order number", e);
+      }
+    };
+
+    fetchOrderNumber();
+  }, []);
+
   const taxRate = (id) => taxes.find((t) => t._id === id)?.rate || 0;
 
   const calc = useMemo(() => {
@@ -408,11 +434,29 @@ export default function AddSalesOrders({
   const addRow = () => setRows((rs) => [...rs, newRow()]);
   const removeRow = (id) => setRows((rs) => rs.filter((r) => r.id !== id));
 
+  // Frontend: AddSalesOrders.jsx
+
   const handleSubmit = async (status = "draft") => {
     setSaving(true);
+
+    // Get the next order number before submitting
+    let nextOrderNumber = "SO-0001"; // Default fallback
+    try {
+      const res = await fetch(`${API_BASE}/api/sales-orders/next-order-number`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch next order number");
+      }
+      const data = await res.json();
+      nextOrderNumber = data.nextOrderNumber;
+    } catch (e) {
+      console.error("Failed to fetch next order number", e);
+    }
+
+    // Prepare the payload
     const payload = {
       ...form,
       status,
+      salesOrderNo: nextOrderNumber, // Use the next order number
       items: calc.calcRows.map(({ base, tax, total, id, ...r }) => r),
       totals: {
         subTotal: Number(calc.subTotal.toFixed(2)),
@@ -538,7 +582,7 @@ export default function AddSalesOrders({
           </label>
           <div className="flex items-center gap-2">
             <input
-              value={form.salesOrderNo}
+              value={form.salesOrderNo || ""}
               onChange={(e) =>
                 setForm((f) => ({ ...f, salesOrderNo: e.target.value }))
               }
@@ -726,7 +770,9 @@ export default function AddSalesOrders({
                             placeholder="Type or click to select an item."
                             onChange={(e) => {
                               const text = e.target.value;
-                              const found = items.find((it) => it.name === text);
+                              const found = items.find(
+                                (it) => it.name === text
+                              );
                               if (found)
                                 updateRow(r.id, {
                                   itemId: found._id,
@@ -735,7 +781,11 @@ export default function AddSalesOrders({
                                   rate: found.price ?? 0,
                                   freeText: "",
                                 });
-                              else updateRow(r.id, { freeText: text, itemId: null });
+                              else
+                                updateRow(r.id, {
+                                  freeText: text,
+                                  itemId: null,
+                                });
                             }}
                             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
@@ -856,7 +906,8 @@ export default function AddSalesOrders({
             onClick={addRow}
             className="mb-4 inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
           >
-            <span>➕</span> Add New Row <span className="ml-2 text-gray-500">▾</span>
+            <span>➕</span> Add New Row{" "}
+            <span className="ml-2 text-gray-500">▾</span>
           </button>
 
           <div className="w-full lg:flex-1">
@@ -867,7 +918,9 @@ export default function AddSalesOrders({
               rows={3}
               placeholder="Enter any notes to be displayed in your transaction"
               value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, notes: e.target.value }))
+              }
               className="mb-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <h4 className="mb-2 text-sm font-semibold text-gray-800">
@@ -877,7 +930,9 @@ export default function AddSalesOrders({
               rows={3}
               placeholder="Enter the terms and conditions of your business to be displayed in your transaction"
               value={form.terms}
-              onChange={(e) => setForm((f) => ({ ...f, terms: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, terms: e.target.value }))
+              }
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -947,7 +1002,10 @@ export default function AddSalesOrders({
               step="0.01"
               value={form.adjustment}
               onChange={(e) =>
-                setForm((f) => ({ ...f, adjustment: asNumberOrZero(e.target.value) }))
+                setForm((f) => ({
+                  ...f,
+                  adjustment: asNumberOrZero(e.target.value),
+                }))
               }
               className="w-44 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -963,15 +1021,22 @@ export default function AddSalesOrders({
               step="0.01"
               value={form.roundOff}
               onChange={(e) =>
-                setForm((f) => ({ ...f, roundOff: asNumberOrZero(e.target.value) }))
+                setForm((f) => ({
+                  ...f,
+                  roundOff: asNumberOrZero(e.target.value),
+                }))
               }
               className="w-44 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
           <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-3">
-            <span className="text-base font-semibold">Total ( {currency} )</span>
-            <strong className="text-lg tabular-nums">{fmtMoney(calc.grand)}</strong>
+            <span className="text-base font-semibold">
+              Total ( {currency} )
+            </span>
+            <strong className="text-lg tabular-nums">
+              {fmtMoney(calc.grand)}
+            </strong>
           </div>
         </div>
       </section>
