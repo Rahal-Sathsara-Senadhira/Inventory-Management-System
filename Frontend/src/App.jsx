@@ -15,6 +15,7 @@ import SalesOrders from "./pages/Sales/SalesOrders.jsx";
 import AddSalesOrders from "./pages/Sales/AddSalesOrders.jsx";
 
 const App = () => {
+  
   return (
     <Routes>
       {/* Public Pages */}

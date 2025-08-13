@@ -1,7 +1,15 @@
 // Backend/controllers/salesOrderController.js
 import SalesOrder from "../models/salesOrder.js";
 
-// Create a new Sales Order
+// OPTIONAL: if you want to denormalize customerName on the fly for the UI
+const addCustomerName = (doc) => {
+  const c = doc?.customerId;
+  const name =
+    c?.displayName || c?.name || c?.firstName || c?.lastName || "";
+  return { ...doc, customerName: name };
+};
+
+// Create a new Sales Order (unchanged unless you want Option B)
 export const createSalesOrder = async (req, res) => {
   try {
     const newSalesOrder = new SalesOrder(req.body);
@@ -13,26 +21,35 @@ export const createSalesOrder = async (req, res) => {
   }
 };
 
-// Get a specific Sales Order by ID
+// Get a specific Sales Order by ID (POPULATED)
 export const getSalesOrder = async (req, res) => {
   const { id } = req.params;
   try {
-    const salesOrder = await SalesOrder.findById(id);
+    const salesOrder = await SalesOrder.findById(id)
+      .populate("customerId", "displayName name");
     if (!salesOrder) {
       return res.status(404).json({ error: "Sales order not found" });
     }
-    res.status(200).json(salesOrder);
+    const json = salesOrder.toObject();
+    const withName = addCustomerName(json);
+    res.status(200).json(withName);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to get sales order" });
   }
 };
 
-// List all Sales Orders
+// List all Sales Orders (POPULATED + SORTED + LEAN)
 export const listSalesOrders = async (req, res) => {
   try {
-    const salesOrders = await SalesOrder.find();
-    res.status(200).json(salesOrders);
+    const salesOrders = await SalesOrder.find()
+      .populate("customerId", "displayName name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // add a flat customerName for easy rendering in the table
+    const withNames = salesOrders.map(addCustomerName);
+    res.status(200).json(withNames);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to list sales orders" });
@@ -43,11 +60,16 @@ export const listSalesOrders = async (req, res) => {
 export const updateSalesOrder = async (req, res) => {
   const { id } = req.params;
   try {
-    const updatedSalesOrder = await SalesOrder.findByIdAndUpdate(id, req.body, { new: true });
+    const updatedSalesOrder = await SalesOrder.findByIdAndUpdate(
+      id,
+      req.body,
+      { new: true, runValidators: true }
+    ).populate("customerId", "displayName name");
     if (!updatedSalesOrder) {
       return res.status(404).json({ error: "Sales order not found" });
     }
-    res.status(200).json(updatedSalesOrder);
+    const json = updatedSalesOrder.toObject();
+    res.status(200).json(addCustomerName(json));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to update sales order" });
@@ -58,13 +80,10 @@ export const updateSalesOrder = async (req, res) => {
 export const deleteSalesOrder = async (req, res) => {
   const { id } = req.params;
   try {
-    const salesOrder = await SalesOrder.findById(id);
-    if (!salesOrder) {
+    const result = await SalesOrder.deleteOne({ _id: id });
+    if (result.deletedCount === 0) {
       return res.status(404).json({ error: "Sales order not found" });
     }
-
-    // Delete the sales order
-    await salesOrder.remove();
     res.status(200).json({ message: "Sales order deleted successfully" });
   } catch (error) {
     console.error(error);
@@ -72,37 +91,30 @@ export const deleteSalesOrder = async (req, res) => {
   }
 };
 
-
-
 // Get the next order number (SO-0001, SO-0002, etc.)
 export const getNextOrderNumber = async (req, res) => {
   try {
-    // Fetch the latest sales order based on creation date
-    const lastOrder = await SalesOrder.findOne().sort({ createdAt: -1 }).limit(1);
+    const lastOrder = await SalesOrder.findOne()
+      .sort({ createdAt: -1 })
+      .limit(1);
 
     if (!lastOrder) {
-      // If no order exists, default to 'SO-0001'
-      return res.status(200).json({ nextOrderNumber: 'SO-0001' });
+      return res.status(200).json({ nextOrderNumber: "SO-0001" });
     }
 
     const lastOrderNumber = lastOrder.salesOrderNo;
-
-    // Check if the last order number follows the correct pattern (SO-XXXX)
-    const orderNumberPart = lastOrderNumber.split('-')[1];
+    const orderNumberPart = lastOrderNumber.split("-")[1];
     if (isNaN(orderNumberPart)) {
-      return res.status(400).json({ error: 'Invalid order number format' });
+      return res.status(400).json({ error: "Invalid order number format" });
     }
 
-    // Generate the new order number by incrementing the numeric part
-    const newOrderNumber = `SO-${(parseInt(orderNumberPart) + 1).toString().padStart(4, '0')}`;
+    const newOrderNumber = `SO-${(parseInt(orderNumberPart, 10) + 1)
+      .toString()
+      .padStart(4, "0")}`;
 
-    // Return the new order number
     res.status(200).json({ nextOrderNumber: newOrderNumber });
   } catch (error) {
-    console.error('Error fetching next order number:', error);
-    res.status(500).json({ error: 'Failed to get next sales order number' });
+    console.error("Error fetching next order number:", error);
+    res.status(500).json({ error: "Failed to get next sales order number" });
   }
 };
-
-
-
