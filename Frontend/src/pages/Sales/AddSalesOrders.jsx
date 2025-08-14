@@ -1,7 +1,5 @@
-//AddSalesOrders.jsx
-import React, { useEffect, useMemo,useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -75,7 +73,7 @@ function ItemAutocomplete({
 
     const onScroll = () => updatePosition();
     const onResize = () => updatePosition();
-    window.addEventListener("scroll", onScroll, true); // capture: track inner scrolls
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onResize);
 
     const ro = new ResizeObserver(updatePosition);
@@ -103,7 +101,7 @@ function ItemAutocomplete({
           const it = await res.json();
           setQuery(it.name || it.sku || "");
         }
-      } catch {/* ignore */}
+      } catch { /* ignore */ }
     })();
     return () => { alive = false; };
   }, [value]);
@@ -196,7 +194,6 @@ function ItemAutocomplete({
     }
   };
 
-  // Inline input stays inside the table cell
   return (
     <>
       <div className="relative w-full">
@@ -218,7 +215,6 @@ function ItemAutocomplete({
             aria-expanded={open}
             aria-autocomplete="list"
           />
-          
         </div>
       </div>
 
@@ -232,10 +228,10 @@ function ItemAutocomplete({
               position: "fixed",
               top: pos.top,
               left: pos.left,
-              width: pos.width,        // wider than input (EXTRA_WIDTH/MIN_WIDTH)
+              width: pos.width,
               maxHeight: "20rem",
               overflow: "auto",
-              zIndex: 2147483647,      // stays above everything
+              zIndex: 2147483647,
             }}
             className="rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
           >
@@ -264,7 +260,6 @@ function ItemAutocomplete({
                     isActive ? "bg-indigo-50 text-indigo-700" : "hover:bg-gray-50"
                   }`}
                 >
-                  {/* First row: Name (nowrap) + SKU on the right */}
                   <div className="flex items-start justify-between gap-4">
                     <div
                       className="font-semibold text-indigo-700"
@@ -272,7 +267,7 @@ function ItemAutocomplete({
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        maxWidth: "70%", // leave space for SKU block
+                        maxWidth: "70%",
                       }}
                       title={it.name}
                     >
@@ -289,14 +284,12 @@ function ItemAutocomplete({
                     )}
                   </div>
 
-                  {/* Second row: optional description */}
                   {it.description && (
                     <div className="mt-1 text-xs text-gray-600 line-clamp-2">
                       {it.description}
                     </div>
                   )}
 
-                  {/* Third row: rate */}
                   <div className="mt-1 text-xs font-medium text-gray-700">
                     Rate: {fmtMoney(price)}
                   </div>
@@ -309,9 +302,6 @@ function ItemAutocomplete({
     </>
   );
 }
-
-
-
 
 /* ------------------------------------------------------------------ */
 /* Customer Autocomplete (safe, server-side search + debounce)        */
@@ -328,7 +318,6 @@ function CustomerAutocomplete({ value, onChange }) {
   const listRef = useRef(null);
   const acRef = useRef(null); // AbortController
 
-  // Reflect selected id -> visible text
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -342,16 +331,11 @@ function CustomerAutocomplete({ value, onChange }) {
           const c = await res.json();
           setQuery(c.displayName || c.name || "");
         }
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [value]);
 
-  // Debounced server search
   useEffect(() => {
     const q = query.trim();
     if (q.length === 0) {
@@ -388,13 +372,9 @@ function CustomerAutocomplete({ value, onChange }) {
     return () => clearTimeout(t);
   }, [query]);
 
-  // Close on outside click
   useEffect(() => {
     const onDoc = (e) => {
-      if (
-        !inputRef.current?.contains(e.target) &&
-        !listRef.current?.contains(e.target)
-      ) {
+      if (!inputRef.current?.contains(e.target) && !listRef.current?.contains(e.target)) {
         setOpen(false);
       }
     };
@@ -478,10 +458,7 @@ function CustomerAutocomplete({ value, onChange }) {
                 role="option"
                 aria-selected={isActive}
                 onMouseEnter={() => setActive(i)}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  select(c);
-                }}
+                onMouseDown={(e) => { e.preventDefault(); select(c); }}
                 className={`cursor-pointer rounded-md px-3 py-2 text-sm ${
                   isActive ? "bg-indigo-50 text-indigo-700" : "hover:bg-gray-50"
                 }`}
@@ -571,7 +548,7 @@ function Remarks({ text }) {
 /* ------------------------------------------------------------------ */
 
 export default function AddSalesOrders({
-  customers: _customers = [], // not used by server autocomplete
+  customers: _customers = [],
   items: itemsProp = [],
   taxes: taxesProp = [],
   priceLists: priceListsProp = [],
@@ -625,6 +602,7 @@ export default function AddSalesOrders({
     rate: 0,
     discount: 0,
     taxId: "",
+    stockAvailable: undefined, // for client-side max clamp
   });
 
   const [rows, setRows] = useState([newRow()]);
@@ -647,9 +625,7 @@ export default function AddSalesOrders({
         if (alive) setSelectedCustomer(null);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [form.customerId]);
 
   useEffect(() => {
@@ -662,19 +638,14 @@ export default function AddSalesOrders({
   useEffect(() => {
     const fetchOrderNumber = async () => {
       try {
-        const res = await fetch(
-          `${API_BASE}/api/sales-orders/next-order-number`
-        );
-        if (!res.ok) {
-          throw new Error("Failed to fetch next order number");
-        }
+        const res = await fetch(`${API_BASE}/api/sales-orders/next-order-number`);
+        if (!res.ok) throw new Error("Failed to fetch next order number");
         const data = await res.json();
         setForm((f) => ({ ...f, salesOrderNo: data.nextOrderNumber }));
       } catch (e) {
         console.error("Failed to fetch next order number", e);
       }
     };
-
     fetchOrderNumber();
   }, []);
 
@@ -703,44 +674,61 @@ export default function AddSalesOrders({
     const totalQty = calcRows.reduce((s, r) => s + Number(r.quantity || 0), 0);
 
     return { calcRows, subTotal, taxTotal, grand, totalQty };
-  }, [
-    rows,
-    form.shippingCharge,
-    form.shippingTaxId,
-    form.adjustment,
-    form.roundOff,
-    taxes,
-  ]);
+  }, [rows, form.shippingCharge, form.shippingTaxId, form.adjustment, form.roundOff, taxes]);
 
   const updateRow = (id, patch) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const addRow = () => setRows((rs) => [...rs, newRow()]);
   const removeRow = (id) => setRows((rs) => rs.filter((r) => r.id !== id));
 
-  // Frontend: AddSalesOrders.jsx
+  // helpers for clamping qty when same item appears on multiple rows
+  const qtyUsedByOtherRows = (row) =>
+    rows.reduce((sum, rr) => {
+      if (rr.id === row.id) return sum;
+      if (rr.itemId && rr.itemId === row.itemId) return sum + Number(rr.quantity || 0);
+      return sum;
+    }, 0);
+
+  const maxQtyForRow = (row) => {
+    if (!row.itemId) return Infinity;
+    const avail = Number.isFinite(row.stockAvailable) ? row.stockAvailable : Infinity;
+    const remaining = avail - qtyUsedByOtherRows(row);
+    return Math.max(0, remaining);
+  };
 
   const handleSubmit = async (status = "draft") => {
+    // guard against obvious over-ordering
+    for (const row of rows) {
+      if (!row.itemId) continue;
+      const maxCap = maxQtyForRow(row);
+      if (Number.isFinite(maxCap) && Number(row.quantity || 0) > maxCap) {
+        alert("Quantity exceeds available stock for one or more items.");
+        return;
+      }
+    }
+
     setSaving(true);
 
     // Get the next order number before submitting
-    let nextOrderNumber = "SO-0001"; // Default fallback
+    let nextOrderNumber = "SO-0001";
     try {
       const res = await fetch(`${API_BASE}/api/sales-orders/next-order-number`);
-      if (!res.ok) {
-        throw new Error("Failed to fetch next order number");
-      }
+      if (!res.ok) throw new Error("Failed to fetch next order number");
       const data = await res.json();
       nextOrderNumber = data.nextOrderNumber;
     } catch (e) {
       console.error("Failed to fetch next order number", e);
     }
 
-    // Prepare the payload
+    // Prepare the payload (ensure "" is not sent for ObjectId fields)
     const payload = {
       ...form,
       status,
-      salesOrderNo: nextOrderNumber, // Use the next order number
-      items: calc.calcRows.map(({ base, tax, total, id, ...r }) => r),
+      salesOrderNo: nextOrderNumber,
+      items: calc.calcRows.map(({ base, tax, total, id, stockAvailable, ...r }) => ({
+        ...r,
+        taxId: r.taxId || undefined, // <-- important
+      })),
       totals: {
         subTotal: Number(calc.subTotal.toFixed(2)),
         taxTotal: Number(calc.taxTotal.toFixed(2)),
@@ -750,6 +738,7 @@ export default function AddSalesOrders({
         grandTotal: Number(calc.grand.toFixed(2)),
         currency,
       },
+      shippingTaxId: form.shippingTaxId || undefined, // <-- important
     };
 
     try {
@@ -761,6 +750,14 @@ export default function AddSalesOrders({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+
+        if (res.status === 409) {
+          const body = await res.json().catch(() => ({}));
+          alert(body?.error || "Insufficient stock");
+          setSaving(false);
+          return;
+        }
+
         if (!res.ok) throw new Error("Failed to save the sales order");
       }
       alert("Sales Order saved successfully!");
@@ -773,10 +770,7 @@ export default function AddSalesOrders({
   };
 
   return (
-    <form
-      className="mx-auto max-w-7xl space-y-6 px-4"
-      onSubmit={(e) => e.preventDefault()}
-    >
+    <form className="mx-auto max-w-7xl space-y-6 px-4" onSubmit={(e) => e.preventDefault()}>
       {/* Title */}
       <div className="flex items-center gap-3">
         <span className="text-2xl">🛒</span>
@@ -786,9 +780,7 @@ export default function AddSalesOrders({
       {/* Customer Name + details */}
       <section className="rounded-xl bg-gray-50 py-4">
         <div className="flex flex-col">
-          <label className="mb-1 text-sm font-medium text-red-500">
-            Customer Name*
-          </label>
+          <label className="mb-1 text-sm font-medium text-red-500">Customer Name*</label>
 
           <div className="flex items-center gap-2">
             <div className="flex-1">
@@ -849,9 +841,7 @@ export default function AddSalesOrders({
               </div>
 
               {/* Remarks */}
-              <Remarks
-                text={selectedCustomer.remarks || selectedCustomer.notes || ""}
-              />
+              <Remarks text={selectedCustomer.remarks || selectedCustomer.notes || ""} />
             </>
           )}
         </div>
@@ -860,15 +850,11 @@ export default function AddSalesOrders({
       {/* Header fields */}
       <section className="flex flex-wrap gap-4">
         <div className="flex w-full flex-col md:basis-[48%]">
-          <label className="mb-1 text-sm font-medium text-red-500">
-            Sales Order#*
-          </label>
+          <label className="mb-1 text-sm font-medium text-red-500">Sales Order#*</label>
           <div className="flex items-center gap-2">
             <input
               value={form.salesOrderNo || ""}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, salesOrderNo: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, salesOrderNo: e.target.value }))}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button
@@ -881,42 +867,32 @@ export default function AddSalesOrders({
           </div>
         </div>
 
-        <div className="flex w-full flex-col md:basis-[48%]">
+        <div className="flex w/full flex-col md:basis-[48%]">
           <label className="mb-1 text-sm text-gray-600">Reference#</label>
           <input
             value={form.referenceNo}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, referenceNo: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, referenceNo: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
 
         <div className="flex w-full flex-col md:basis-[48%]">
-          <label className="mb-1 text-sm font-medium text-red-500">
-            Sales Order Date*
-          </label>
+          <label className="mb-1 text-sm font-medium text-red-500">Sales Order Date*</label>
           <input
             type="date"
             required
             value={form.salesOrderDate}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, salesOrderDate: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, salesOrderDate: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
 
         <div className="flex w-full flex-col md:basis-[48%]">
-          <label className="mb-1 text-sm text-gray-600">
-            Expected Shipment Date
-          </label>
+          <label className="mb-1 text-sm text-gray-600">Expected Shipment Date</label>
           <input
             type="date"
             value={form.expectedShipmentDate}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, expectedShipmentDate: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, expectedShipmentDate: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
@@ -925,15 +901,11 @@ export default function AddSalesOrders({
           <label className="mb-1 text-sm text-gray-600">Payment Terms</label>
           <select
             value={form.paymentTerm}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, paymentTerm: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, paymentTerm: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {paymentTerms.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
+              <option key={p.value} value={p.value}>{p.label}</option>
             ))}
           </select>
         </div>
@@ -946,16 +918,12 @@ export default function AddSalesOrders({
           <label className="mb-1 text-sm text-gray-600">Delivery Method</label>
           <select
             value={form.deliveryMethod}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, deliveryMethod: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, deliveryMethod: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">Select a delivery method or type to add</option>
             {deliveryMethods.map((d) => (
-              <option key={d.value || d} value={d.value || d}>
-                {d.label || d}
-              </option>
+              <option key={d.value || d} value={d.value || d}>{d.label || d}</option>
             ))}
           </select>
         </div>
@@ -964,16 +932,12 @@ export default function AddSalesOrders({
           <label className="mb-1 text-sm text-gray-600">Salesperson</label>
           <select
             value={form.salespersonId}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, salespersonId: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, salespersonId: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">Select or Add Salesperson</option>
             {salespersons.map((s) => (
-              <option key={s._id || s.value} value={s._id || s.value}>
-                {s.name || s.label}
-              </option>
+              <option key={s._id || s.value} value={s._id || s.value}>{s.name || s.label}</option>
             ))}
           </select>
         </div>
@@ -981,27 +945,19 @@ export default function AddSalesOrders({
 
       {/* Price List */}
       <div className="flex items-center gap-2 text-sm text-gray-700">
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-gray-300">
-          📋
-        </span>
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-gray-300">📋</span>
         <span className="min-w-[7rem]">Select Price List</span>
         <select
           value={form.priceListId}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, priceListId: e.target.value }))
-          }
+          onChange={(e) => setForm((f) => ({ ...f, priceListId: e.target.value }))}
           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <option value="">—</option>
           {priceLists.map((pl) => (
-            <option key={pl._id} value={pl._id}>
-              {pl.name}
-            </option>
+            <option key={pl._id} value={pl._id}>{pl.name}</option>
           ))}
         </select>
-        <button type="button" className="ml-1 text-gray-500">
-          ▾
-        </button>
+        <button type="button" className="ml-1 text-gray-500">▾</button>
       </div>
 
       {/* Items table */}
@@ -1036,59 +992,63 @@ export default function AddSalesOrders({
                         <div className="flex items-center gap-3">
                           <div className="grid h-8 w-5 grid-cols-2 gap-0.5 opacity-50">
                             {[...Array(6)].map((_, k) => (
-                              <span
-                                key={k}
-                                className="h-1.5 w-1.5 rounded bg-gray-300"
-                              />
+                              <span key={k} className="h-1.5 w-1.5 rounded bg-gray-300" />
                             ))}
                           </div>
                           <div className="h-10 w-12 rounded border border-gray-200 bg-gray-50" />
                           <ItemAutocomplete
                             value={r.itemId}
                             priceListId={form.priceListId}
-                            onChange={(itemId) => {
-                              // keep state in sync if you only want the id
-                              updateRow(r.id, { itemId });
-                            }}
+                            onChange={(itemId) => updateRow(r.id, { itemId })}
                             onPick={(it) => {
-                              // when a real item is chosen, set row fields
                               const rate =
-                                it.prices &&
-                                form.priceListId &&
-                                it.prices[form.priceListId] != null
+                                it.prices && form.priceListId && it.prices[form.priceListId] != null
                                   ? it.prices[form.priceListId]
                                   : it.price ?? 0;
 
+                              const stockAvailable =
+                                typeof it.availableQty === "number" ? it.availableQty : Infinity;
+
+                              const currentQ = Number(r.quantity || 1);
+                              const clampedQ = Number.isFinite(stockAvailable)
+                                ? Math.min(currentQ, stockAvailable)
+                                : currentQ;
+
                               updateRow(r.id, {
                                 itemId: it._id,
-                                freeText: "", // clear free text
-                                rate, // default rate from item / price list
-                                taxId: it.taxId || "", // optional: default tax from item
-                                // you could also set a default quantity/UOM if you store them
+                                freeText: "",
+                                rate,
+                                taxId: it.taxId || null,       // <-- no empty string
+                                stockAvailable,
+                                quantity: clampedQ,
                               });
                             }}
                             onFreeText={(text) => {
-                              // user typing without picking an item: treat as free-text line
-                              if (!r.itemId)
-                                updateRow(r.id, { freeText: text });
+                              if (!r.itemId) updateRow(r.id, { freeText: text });
                             }}
                           />
                         </div>
                       </td>
 
                       <td className="p-2 align-top">
-                        <input
-                          type="number"
-                          min={0}
-                          step="1"
-                          value={r.quantity}
-                          onChange={(e) =>
-                            updateRow(r.id, {
-                              quantity: asNumberOrZero(e.target.value),
-                            })
-                          }
-                          className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
+                        {(() => {
+                          const maxCap = maxQtyForRow(r);
+                          return (
+                            <input
+                              type="number"
+                              min={0}
+                              step="1"
+                              value={r.quantity}
+                              max={Number.isFinite(maxCap) ? maxCap : undefined}
+                              onChange={(e) => {
+                                let q = asNumberOrZero(e.target.value);
+                                if (Number.isFinite(maxCap) && q > maxCap) q = maxCap;
+                                updateRow(r.id, { quantity: q });
+                              }}
+                              className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          );
+                        })()}
                       </td>
 
                       <td className="p-2 align-top">
@@ -1098,11 +1058,7 @@ export default function AddSalesOrders({
                             min={0}
                             step="0.01"
                             value={r.rate}
-                            onChange={(e) =>
-                              updateRow(r.id, {
-                                rate: asNumberOrZero(e.target.value),
-                              })
-                            }
+                            onChange={(e) => updateRow(r.id, { rate: asNumberOrZero(e.target.value) })}
                             className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                           <span className="text-gray-400">🧮</span>
@@ -1117,11 +1073,7 @@ export default function AddSalesOrders({
                             max={100}
                             step="0.01"
                             value={r.discount}
-                            onChange={(e) =>
-                              updateRow(r.id, {
-                                discount: asNumberOrZero(e.target.value),
-                              })
-                            }
+                            onChange={(e) => updateRow(r.id, { discount: asNumberOrZero(e.target.value) })}
                             className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                           <span className="text-sm text-gray-500">%</span>
@@ -1131,9 +1083,7 @@ export default function AddSalesOrders({
                       <td className="p-2 align-top">
                         <select
                           value={r.taxId || ""}
-                          onChange={(e) =>
-                            updateRow(r.id, { taxId: e.target.value || null })
-                          }
+                          onChange={(e) => updateRow(r.id, { taxId: e.target.value || null })}
                           className="w-44 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                           <option value="">Select a Tax</option>
@@ -1185,33 +1135,24 @@ export default function AddSalesOrders({
             onClick={addRow}
             className="mb-4 inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
           >
-            <span>➕</span> Add New Row{" "}
-            <span className="ml-2 text-gray-500">▾</span>
+            <span>➕</span> Add New Row <span className="ml-2 text-gray-500">▾</span>
           </button>
 
           <div className="w-full lg:flex-1">
-            <h4 className="mb-2 text-sm font-semibold text-gray-800">
-              Customer Notes
-            </h4>
+            <h4 className="mb-2 text-sm font-semibold text-gray-800">Customer Notes</h4>
             <textarea
               rows={3}
               placeholder="Enter any notes to be displayed in your transaction"
               value={form.notes}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, notes: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               className="mb-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            <h4 className="mb-2 text-sm font-semibold text-gray-800">
-              Terms & Conditions
-            </h4>
+            <h4 className="mb-2 text-sm font-semibold text-gray-800">Terms & Conditions</h4>
             <textarea
               rows={3}
               placeholder="Enter the terms and conditions of your business to be displayed in your transaction"
               value={form.terms}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, terms: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, terms: e.target.value }))}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -1234,10 +1175,7 @@ export default function AddSalesOrders({
               step="0.01"
               value={form.shippingCharge}
               onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  shippingCharge: asNumberOrZero(e.target.value),
-                }))
+                setForm((f) => ({ ...f, shippingCharge: asNumberOrZero(e.target.value) }))
               }
               className="w-44 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -1253,9 +1191,7 @@ export default function AddSalesOrders({
           {showShipTax && (
             <select
               value={form.shippingTaxId}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, shippingTaxId: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, shippingTaxId: e.target.value }))}
               className="w-44 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="">—</option>
@@ -1270,9 +1206,7 @@ export default function AddSalesOrders({
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-700">
-                <span className="rounded border border-dashed px-3 py-1">
-                  Adjustment
-                </span>
+                <span className="rounded border border-dashed px-3 py-1">Adjustment</span>
               </span>
               <InfoIcon text="Manual +/- tweak to your total (e.g., discount, small correction). This applies after subtotal + tax." />
             </div>
@@ -1280,12 +1214,7 @@ export default function AddSalesOrders({
               type="number"
               step="0.01"
               value={form.adjustment}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  adjustment: asNumberOrZero(e.target.value),
-                }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, adjustment: asNumberOrZero(e.target.value) }))}
               className="w-44 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -1299,23 +1228,14 @@ export default function AddSalesOrders({
               type="number"
               step="0.01"
               value={form.roundOff}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  roundOff: asNumberOrZero(e.target.value),
-                }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, roundOff: asNumberOrZero(e.target.value) }))}
               className="w-44 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
 
           <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-3">
-            <span className="text-base font-semibold">
-              Total ( {currency} )
-            </span>
-            <strong className="text-lg tabular-nums">
-              {fmtMoney(calc.grand)}
-            </strong>
+            <span className="text-base font-semibold">Total ( {currency} )</span>
+            <strong className="text-lg tabular-nums">{fmtMoney(calc.grand)}</strong>
           </div>
         </div>
       </section>
@@ -1323,9 +1243,7 @@ export default function AddSalesOrders({
       {/* Attachments */}
       <section className="flex flex-col gap-6 lg:flex-row">
         <div className="w-full lg:flex-1">
-          <h4 className="mb-2 text-sm font-semibold text-gray-800">
-            Attach File(s) to Sales Order
-          </h4>
+          <h4 className="mb-2 text-sm font-semibold text-gray-800">Attach File(s) to Sales Order</h4>
           <div className="flex items-center gap-2">
             <label className="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium shadow-sm hover:bg-gray-50">
               ⬆️ Upload File
@@ -1341,16 +1259,9 @@ export default function AddSalesOrders({
                 }
               />
             </label>
-            <button
-              type="button"
-              className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm"
-            >
-              ▾
-            </button>
+            <button type="button" className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm">▾</button>
           </div>
-          <p className="mt-2 text-xs text-gray-500">
-            You can upload a maximum of 10 files, 5MB each
-          </p>
+          <p className="mt-2 text-xs text-gray-500">You can upload a maximum of 10 files, 5MB each</p>
         </div>
       </section>
 
@@ -1392,12 +1303,8 @@ export default function AddSalesOrders({
             </button>
           </div>
           <div className="text-right text-sm text-gray-700">
-            <div>
-              Total Amount: {currency} {fmtMoney(calc.grand)}
-            </div>
-            <div className="text-xs text-gray-500">
-              Total Quantity: {calc.totalQty}
-            </div>
+            <div> Total Amount: {currency} {fmtMoney(calc.grand)} </div>
+            <div className="text-xs text-gray-500"> Total Quantity: {calc.totalQty} </div>
           </div>
         </div>
       </div>

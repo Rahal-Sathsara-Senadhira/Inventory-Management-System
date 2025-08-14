@@ -44,16 +44,13 @@ const normalizeDimensions = (raw) => {
 };
 
 const normalizePrices = (raw) => {
-  // Accept {}, Map-like objects, or JSON string
   const p = typeof raw === "string" ? parseMaybeJSON(raw) : raw;
   if (!p || typeof p !== "object" || Array.isArray(p)) return undefined;
-  // Cast every value to number (default 0 if NaN)
   const entries = Object.entries(p).map(([k, v]) => [k, coerceNumber(v) ?? 0]);
   return Object.fromEntries(entries);
 };
 
 /* --------------------------------- list ---------------------------------- */
-
 export const listItems = async (_req, res) => {
   try {
     const items = await Item.find().sort({ createdAt: -1 });
@@ -65,7 +62,6 @@ export const listItems = async (_req, res) => {
 };
 
 /* --------------------------------- create -------------------------------- */
-
 export const createItem = async (req, res) => {
   try {
     const b = req.body;
@@ -108,12 +104,15 @@ export const createItem = async (req, res) => {
 };
 
 /* --------------------------------- getOne -------------------------------- */
-
 export const getItem = async (req, res) => {
   try {
-    const it = await Item.findById(req.params.id);
+    const it = await Item.findById(req.params.id).lean();
     if (!it) return res.status(404).json({ error: "Item not found" });
-    res.json(it);
+
+    // For services, availability isn't capped; for goods we send stock.
+    const availableQty = it.type === "Goods" ? it.stock : null;
+
+    res.json({ ...it, availableQty });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch item" });
@@ -121,16 +120,22 @@ export const getItem = async (req, res) => {
 };
 
 /* -------------------------------- search --------------------------------- */
-
 export const searchItems = async (req, res) => {
   try {
     const q = (req.query.q || "").trim();
     if (!q) return res.json([]);
+
     const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     const items = await Item.find({ $or: [{ name: rx }, { sku: rx }] })
       .limit(20)
       .lean();
-    res.json(items);
+
+    const mapped = items.map((it) => ({
+      ...it,
+      availableQty: it.type === "Goods" ? it.stock : null,
+    }));
+
+    res.json(mapped);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Search failed" });
@@ -138,7 +143,6 @@ export const searchItems = async (req, res) => {
 };
 
 /* ------------------------------ check SKU -------------------------------- */
-
 export const checkSku = async (req, res) => {
   try {
     const sku = (req.query.sku || "").trim();
@@ -147,10 +151,7 @@ export const checkSku = async (req, res) => {
     if (!sku) return res.json({ exists: false });
 
     const query = { sku };
-    if (excludeId) {
-      // exclude current item when editing
-      query._id = { $ne: excludeId };
-    }
+    if (excludeId) query._id = { $ne: excludeId };
 
     const exists = await Item.exists(query);
     res.json({ exists: !!exists });
@@ -161,20 +162,17 @@ export const checkSku = async (req, res) => {
 };
 
 /* --------------------------------- update -------------------------------- */
-
 export const updateItem = async (req, res) => {
   try {
     const id = req.params.id;
     const b = req.body;
 
-    // If SKU provided, ensure it's not taken by someone else
     if (b.sku && b.sku.trim()) {
       const taken = await Item.exists({ sku: b.sku.trim(), _id: { $ne: id } });
       if (taken) return res.status(400).json({ error: "SKU already exists" });
     }
 
     const patch = {
-      // primitive fields (only set when present)
       ...(b.type !== undefined ? { type: b.type } : {}),
       ...(b.name !== undefined ? { name: b.name } : {}),
       ...(b.sku !== undefined ? { sku: b.sku || undefined } : {}),
@@ -189,7 +187,6 @@ export const updateItem = async (req, res) => {
       ...(b.imageUrl !== undefined ? { imageUrl: b.imageUrl } : {}),
     };
 
-    // numbers
     ["price", "stock", "weight"].forEach((k) => {
       if (b[k] !== undefined) {
         const n = coerceNumber(b[k]);
@@ -197,13 +194,11 @@ export const updateItem = async (req, res) => {
       }
     });
 
-    // boolean
     if (b.returnable !== undefined) {
       const bool = coerceBoolean(b.returnable);
       if (bool !== undefined) patch.returnable = bool;
     }
 
-    // complex
     if (b.dimensions !== undefined) {
       patch.dimensions = normalizeDimensions(b.dimensions);
     }
@@ -211,7 +206,6 @@ export const updateItem = async (req, res) => {
       patch.prices = normalizePrices(b.prices) ?? {};
     }
 
-    // never allow _id change
     delete patch._id;
 
     const it = await Item.findByIdAndUpdate(id, patch, {
@@ -228,7 +222,6 @@ export const updateItem = async (req, res) => {
 };
 
 /* --------------------------------- delete -------------------------------- */
-
 export const deleteItem = async (req, res) => {
   try {
     const it = await Item.findByIdAndDelete(req.params.id);

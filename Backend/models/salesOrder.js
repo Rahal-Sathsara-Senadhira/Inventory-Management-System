@@ -1,4 +1,4 @@
-//models/salesOrder.js
+// models/salesOrder.js
 import mongoose from 'mongoose';
 
 const SalesOrderItemSchema = new mongoose.Schema({
@@ -21,6 +21,13 @@ const TotalsSchema = new mongoose.Schema({
 }, { _id: false });
 
 const SalesOrderSchema = new mongoose.Schema({
+  // add a generated uid that satisfies your existing unique index
+  uid: {
+    type: String,
+    unique: true,
+    default: () => new mongoose.Types.ObjectId().toString()
+  },
+
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
   salesOrderNo: { type: String, required: true, unique: true, index: true },
   referenceNo: String,
