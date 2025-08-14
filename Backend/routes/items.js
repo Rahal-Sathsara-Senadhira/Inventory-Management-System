@@ -12,15 +12,21 @@ import {
 
 const router = express.Router();
 
-// List items
+// List/search/sku
 router.get("/", listItems);
 router.get("/search", searchItems);
+
+/**
+ * Check SKU availability.
+ * - Create:  /api/items/check-sku?sku=ABC123
+ * - Edit:    /api/items/check-sku?sku=ABC123&excludeId=<currentItemId>
+ */
 router.get("/check-sku", checkSku);
 
-// CRUD routes for items
+// CRUD
 router.get("/:id", getItem);
-router.post("/", createItem); // Item creation without file upload
-router.put("/:id", updateItem); // Update item
-router.delete("/:id", deleteItem); // Delete item
+router.post("/", createItem);
+router.put("/:id", updateItem);
+router.delete("/:id", deleteItem);
 
 export default router;

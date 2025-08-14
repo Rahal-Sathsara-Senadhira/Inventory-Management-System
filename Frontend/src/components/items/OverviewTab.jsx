@@ -11,7 +11,9 @@ const OverviewTab = ({ item }) => {
           <div className="w-full md:w-8/12">
             <div className="group pb-3">
               <div className="row flex mb-2">
-                <label className="w-1/3 font-medium text-gray-700">Item Type</label>
+                <label className="w-1/3 font-medium text-gray-700">
+                  Item Type
+                </label>
                 <label className="w-2/3">{item.type}</label>
               </div>
             </div>
@@ -22,28 +24,44 @@ const OverviewTab = ({ item }) => {
                 <label className="w-2/3 break-words">{item.sku}</label>
               </div>
               <div className="row flex">
-                <label className="w-1/3 font-medium text-gray-700">Unit</label>
-                <label className="w-2/3">{item.unit}</label>
-              </div>
-              <div className="row flex">
                 <label className="w-1/3 font-medium text-gray-700">Price</label>
                 <label className="w-2/3">{`$${item.price}`}</label>
               </div>
               <div className="row flex">
                 <label className="w-1/3 font-medium text-gray-700">Stock</label>
-                <label className="w-2/3">{item.stock}</label>
+                <label className="w-2/3">{item.stock} {item.unit}</label>
               </div>
               <div className="row flex">
-                <label className="w-1/3 font-medium text-gray-700">Weight</label>
+                <label className="w-1/3 font-medium text-gray-700">
+                  Weight
+                </label>
                 <label className="w-2/3">{item.weight} kg</label>
               </div>
               <div className="row flex">
-                <label className="w-1/3 font-medium text-gray-700">Manufacturer</label>
+                <label className="w-1/3 font-medium text-gray-700">
+                  Manufacturer
+                </label>
                 <label className="w-2/3">{item.manufacturer}</label>
               </div>
               <div className="row flex">
                 <label className="w-1/3 font-medium text-gray-700">Brand</label>
                 <label className="w-2/3">{item.brand}</label>
+              </div>
+              <div className="row flex">
+                <label className="w-1/3 font-medium text-gray-700">
+                  Dimensions
+                </label>
+                <div className="w-2/3 flex flex-col">
+                  <label className="">
+                    Height&nbsp;&nbsp; {item.dimensions.height}cm
+                  </label>
+                  <label className="">
+                    Width&nbsp;&nbsp;&nbsp; {item.dimensions.width}cm
+                  </label>
+                  <label className="">
+                    Length&nbsp;&nbsp; {item.dimensions.length}cm
+                  </label>
+                </div>
               </div>
               <div className="row flex">
                 <label className="w-1/3 font-medium text-gray-700">UPC</label>

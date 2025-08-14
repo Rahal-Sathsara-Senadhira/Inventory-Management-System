@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom"; // Import useParams to get route params
 import OverviewTab from "../../components/items/OverviewTab";
 import TransactionsTab from "../../components/items/TransactionsTab";
 import HistoryTab from "../../components/items/HistoryTab";
 import ActionsDropdown from "../../components/items/ActionsDropdown";
+import { useNavigate, useParams } from "react-router-dom";
 
 const ItemDetails = () => {
   // Extracting `type` and `id` from URL using useParams
   const { type, id } = useParams();
   const [activeTab, setActiveTab] = useState("overview");
   const [itemData, setItemData] = useState(null); // State to store item data
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!id) return; // Check if id exists before fetching data
@@ -46,16 +47,33 @@ const ItemDetails = () => {
     return <div>Loading...</div>; // Loading state when item data is not yet fetched
   }
 
+  // Function to handle "Edit" button click
+  const handleEditClick = () => {
+    // Redirect to the edit page for this item
+    navigate(`/inventory/${type}/items/${id}/edit`);
+  };
+
   return (
     <div className="p-6 space-y-4 bg-white -z-10">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between border-b pb-4">
-        <h3 className="text-2xl font-semibold text-gray-800">{itemData.name}</h3>
+        <h3 className="text-2xl font-semibold text-gray-800">
+          {itemData.name}
+        </h3>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn btn-sm bg-gray-100 hover:bg-gray-200 text-sm px-4 py-1.5 rounded">
+          <button
+            className="btn btn-sm bg-gray-100 hover:bg-gray-200 text-sm px-4 py-1.5 rounded"
+            onClick={handleEditClick}
+          >
             ✏️ Edit
           </button>
-          <ActionsDropdown />
+          <ActionsDropdown
+            itemId={id}
+            onDeleted={() => {
+              // After delete, go back to the items list for this type
+              navigate(`/inventory/${type}/items`);
+            }}
+          />
         </div>
       </div>
 
@@ -67,7 +85,9 @@ const ItemDetails = () => {
         <ul className="flex space-x-6 text-sm font-medium text-gray-600">
           <li
             className={`cursor-pointer py-2 border-b-2 ${
-              activeTab === "overview" ? "border-blue-500 text-blue-600" : "border-transparent"
+              activeTab === "overview"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent"
             }`}
             onClick={() => setActiveTab("overview")}
           >
@@ -75,7 +95,9 @@ const ItemDetails = () => {
           </li>
           <li
             className={`cursor-pointer py-2 border-b-2 ${
-              activeTab === "transactions" ? "border-blue-500 text-blue-600" : "border-transparent"
+              activeTab === "transactions"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent"
             }`}
             onClick={() => setActiveTab("transactions")}
           >
@@ -83,7 +105,9 @@ const ItemDetails = () => {
           </li>
           <li
             className={`cursor-pointer py-2 border-b-2 ${
-              activeTab === "history" ? "border-blue-500 text-blue-600" : "border-transparent"
+              activeTab === "history"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent"
             }`}
             onClick={() => setActiveTab("history")}
           >

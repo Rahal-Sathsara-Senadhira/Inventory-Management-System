@@ -1,4 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+//AddSalesOrders.jsx
+import React, { useEffect, useMemo,useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -29,6 +32,286 @@ function InfoIcon({ text }) {
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Item Autocomplete rendered in a BODY portal (won't be clipped)     */
+/* ------------------------------------------------------------------ */
+
+function ItemAutocomplete({
+  value,        // selected itemId (string) or null
+  onChange,     // (itemId: string) => void
+  onPick,       // optional: (fullItem: object) => void
+  onFreeText,   // optional: (text: string) => void (when user types)
+  priceListId,  // optional: pick tiered price
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const inputRef = useRef(null);
+  const acRef = useRef(null); // AbortController
+
+  // ---- dropdown position (anchored to input, rendered in <body>) ----
+  const EXTRA_WIDTH = 80;   // add a bit more width than the input
+  const MIN_WIDTH   = 300;  // never smaller than this
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  const updatePosition = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({
+      top: r.bottom + 4,    // small gap under input
+      left: r.left,
+      width: Math.max(r.width + EXTRA_WIDTH, MIN_WIDTH),
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+
+    const onScroll = () => updatePosition();
+    const onResize = () => updatePosition();
+    window.addEventListener("scroll", onScroll, true); // capture: track inner scrolls
+    window.addEventListener("resize", onResize);
+
+    const ro = new ResizeObserver(updatePosition);
+    ro.observe(document.documentElement);
+    if (inputRef.current) ro.observe(inputRef.current);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+      ro.disconnect();
+    };
+  }, [open]);
+
+  // Reflect selected id -> visible text
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!value) {
+        setQuery("");
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/api/items/${value}`);
+        if (alive && res.ok) {
+          const it = await res.json();
+          setQuery(it.name || it.sku || "");
+        }
+      } catch {/* ignore */}
+    })();
+    return () => { alive = false; };
+  }, [value]);
+
+  // Debounced server search
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length === 0) {
+      setItems([]);
+      return;
+    }
+    setLoading(true);
+    setOpen(true);
+
+    const t = setTimeout(async () => {
+      try {
+        acRef.current?.abort();
+        const ac = new AbortController();
+        acRef.current = ac;
+
+        const res = await fetch(
+          `${API_BASE}/api/items/search?q=${encodeURIComponent(q)}`,
+          { signal: ac.signal }
+        );
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        setItems(Array.isArray(data) ? data : []);
+        setActive(0);
+      } catch (e) {
+        if (e.name !== "AbortError") {
+          console.error(e);
+          setItems([]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Close on outside click (list is portaled, so listen on document)
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      const insideInput = inputRef.current?.contains(e.target);
+      const insideList = (el) => {
+        while (el) {
+          if (el.dataset?.role === "item-listbox") return true;
+          el = el.parentElement;
+        }
+        return false;
+      };
+      if (!insideInput && !insideList(e.target)) setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const select = (it) => {
+    onChange?.(it?._id || "");
+    onPick?.(it || null);
+    setQuery(it ? (it.name || it.sku || "") : "");
+    setOpen(false);
+    inputRef.current?.blur();
+  };
+
+  const onKeyDown = (e) => {
+    if (!open && (e.key === "ArrowDown" || e.key === "Enter")) {
+      setOpen(true);
+      updatePosition();
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => Math.min(i + 1, items.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (items[active]) select(items[active]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  // Inline input stays inside the table cell
+  return (
+    <>
+      <div className="relative w-full">
+        <div className="flex">
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Start typing an item…"
+            value={query}
+            onChange={(e) => {
+              const text = e.target.value;
+              setQuery(text);
+              onFreeText?.(text);
+            }}
+            onFocus={() => { setOpen(true); updatePosition(); }}
+            onKeyDown={onKeyDown}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            role="combobox"
+            aria-expanded={open}
+            aria-autocomplete="list"
+          />
+          
+        </div>
+      </div>
+
+      {/* Portal: dropdown rendered at <body> with fixed positioning */}
+      {open &&
+        createPortal(
+          <ul
+            data-role="item-listbox"
+            role="listbox"
+            style={{
+              position: "fixed",
+              top: pos.top,
+              left: pos.left,
+              width: pos.width,        // wider than input (EXTRA_WIDTH/MIN_WIDTH)
+              maxHeight: "20rem",
+              overflow: "auto",
+              zIndex: 2147483647,      // stays above everything
+            }}
+            className="rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
+          >
+            {loading && (
+              <li className="px-3 py-2 text-sm text-gray-500">Searching…</li>
+            )}
+            {!loading && items.length === 0 && query.trim().length > 0 && (
+              <li className="px-3 py-2 text-sm text-gray-500">No matches</li>
+            )}
+
+            {items.map((it, i) => {
+              const isActive = i === active;
+              const price =
+                (it.prices && priceListId && it.prices[priceListId] != null)
+                  ? it.prices[priceListId]
+                  : (it.price ?? 0);
+
+              return (
+                <li
+                  key={it._id}
+                  role="option"
+                  aria-selected={isActive}
+                  onMouseEnter={() => setActive(i)}
+                  onMouseDown={(e) => { e.preventDefault(); select(it); }}
+                  className={`cursor-pointer rounded-md px-4 py-3 text-sm transition ${
+                    isActive ? "bg-indigo-50 text-indigo-700" : "hover:bg-gray-50"
+                  }`}
+                >
+                  {/* First row: Name (nowrap) + SKU on the right */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div
+                      className="font-semibold text-indigo-700"
+                      style={{
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        maxWidth: "70%", // leave space for SKU block
+                      }}
+                      title={it.name}
+                    >
+                      {it.name || "(unnamed item)"}
+                    </div>
+                    {it.sku && (
+                      <div
+                        className="text-xs text-gray-500 text-right"
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        <div>SKU:</div>
+                        <div>{it.sku}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Second row: optional description */}
+                  {it.description && (
+                    <div className="mt-1 text-xs text-gray-600 line-clamp-2">
+                      {it.description}
+                    </div>
+                  )}
+
+                  {/* Third row: rate */}
+                  <div className="mt-1 text-xs font-medium text-gray-700">
+                    Rate: {fmtMoney(price)}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>,
+          document.body
+        )}
+    </>
+  );
+}
+
+
+
 
 /* ------------------------------------------------------------------ */
 /* Customer Autocomplete (safe, server-side search + debounce)        */
@@ -760,40 +1043,36 @@ export default function AddSalesOrders({
                             ))}
                           </div>
                           <div className="h-10 w-12 rounded border border-gray-200 bg-gray-50" />
-                          <input
-                            list={`items-${r.id}`}
-                            value={
-                              items.find((it) => it._id === r.itemId)?.name ||
-                              r.freeText ||
-                              ""
-                            }
-                            placeholder="Type or click to select an item."
-                            onChange={(e) => {
-                              const text = e.target.value;
-                              const found = items.find(
-                                (it) => it.name === text
-                              );
-                              if (found)
-                                updateRow(r.id, {
-                                  itemId: found._id,
-                                  // If you have tiered pricing per price list:
-                                  // rate: found.prices?.[form.priceListId] ?? found.price ?? 0,
-                                  rate: found.price ?? 0,
-                                  freeText: "",
-                                });
-                              else
-                                updateRow(r.id, {
-                                  freeText: text,
-                                  itemId: null,
-                                });
+                          <ItemAutocomplete
+                            value={r.itemId}
+                            priceListId={form.priceListId}
+                            onChange={(itemId) => {
+                              // keep state in sync if you only want the id
+                              updateRow(r.id, { itemId });
                             }}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            onPick={(it) => {
+                              // when a real item is chosen, set row fields
+                              const rate =
+                                it.prices &&
+                                form.priceListId &&
+                                it.prices[form.priceListId] != null
+                                  ? it.prices[form.priceListId]
+                                  : it.price ?? 0;
+
+                              updateRow(r.id, {
+                                itemId: it._id,
+                                freeText: "", // clear free text
+                                rate, // default rate from item / price list
+                                taxId: it.taxId || "", // optional: default tax from item
+                                // you could also set a default quantity/UOM if you store them
+                              });
+                            }}
+                            onFreeText={(text) => {
+                              // user typing without picking an item: treat as free-text line
+                              if (!r.itemId)
+                                updateRow(r.id, { freeText: text });
+                            }}
                           />
-                          <datalist id={`items-${r.id}`}>
-                            {items.map((it) => (
-                              <option key={it._id} value={it.name} />
-                            ))}
-                          </datalist>
                         </div>
                       </td>
 

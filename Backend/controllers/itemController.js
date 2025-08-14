@@ -1,7 +1,60 @@
 // controllers/itemController.js
 import Item from "../models/Item.js";
 
-export const listItems = async (req, res) => {
+/* -------------------------- helper coercion utils ------------------------- */
+
+const coerceNumber = (v) => {
+  if (v === undefined || v === null || v === "") return undefined;
+  const n = Number(v);
+  return Number.isNaN(n) ? undefined : n;
+};
+
+const coerceBoolean = (v) => {
+  if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (["true", "1", "yes"].includes(s)) return true;
+    if (["false", "0", "no"].includes(s)) return false;
+  }
+  return undefined;
+};
+
+const parseMaybeJSON = (v) => {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
+const normalizeDimensions = (raw) => {
+  const d = typeof raw === "string" ? parseMaybeJSON(raw) : raw;
+  if (!d || typeof d !== "object") return undefined;
+  return {
+    length: d.length ?? "",
+    width: d.width ?? "",
+    height: d.height ?? "",
+  };
+};
+
+const normalizePrices = (raw) => {
+  // Accept {}, Map-like objects, or JSON string
+  const p = typeof raw === "string" ? parseMaybeJSON(raw) : raw;
+  if (!p || typeof p !== "object" || Array.isArray(p)) return undefined;
+  // Cast every value to number (default 0 if NaN)
+  const entries = Object.entries(p).map(([k, v]) => [k, coerceNumber(v) ?? 0]);
+  return Object.fromEntries(entries);
+};
+
+/* --------------------------------- list ---------------------------------- */
+
+export const listItems = async (_req, res) => {
   try {
     const items = await Item.find().sort({ createdAt: -1 });
     res.json(items);
@@ -11,48 +64,36 @@ export const listItems = async (req, res) => {
   }
 };
 
+/* --------------------------------- create -------------------------------- */
+
 export const createItem = async (req, res) => {
   try {
     const b = req.body;
 
-    // Ensure dimensions are an object and properly parsed
-    let dimensions = {};
-    if (typeof b.dimensions === "string") {
-      try {
-        dimensions = JSON.parse(b.dimensions); // Parse if it's a string
-      } catch (e) {
-        console.error("Invalid dimensions JSON:", e);
-      }
-    } else if (b.dimensions) {
-      dimensions = b.dimensions; // If already an object, use it
-    }
-
-    // Handle prices (ensure it's an object)
-    const prices = b.prices && typeof b.prices === 'object' ? b.prices : {};
-
-    // Generate unique item ID (NI-XXXX)
-    const itemId = `NI-${Math.floor(1000 + Math.random() * 9000)}`;
-
     const doc = new Item({
-      itemId, // The new unique item ID
       type: b.type,
       name: b.name,
       sku: b.sku || undefined,
       unit: b.unit,
-      returnable: b.returnable === true || b.returnable === "true",
-      price: b.price ? Number(b.price) : 0,
-      stock: b.stock ? Number(b.stock) : 0,
-      weight: b.weight ? Number(b.weight) : 0,
-      manufacturer: b.manufacturer,
-      brand: b.brand,
-      upc: b.upc,
-      ean: b.ean,
-      mpn: b.mpn,
-      isbn: b.isbn,
+      returnable: coerceBoolean(b.returnable) ?? true,
+
+      price: coerceNumber(b.price) ?? 0,
+      stock: coerceNumber(b.stock) ?? 0,
+      weight: coerceNumber(b.weight) ?? 0,
+
+      manufacturer: b.manufacturer ?? "",
+      brand: b.brand ?? "",
+      upc: b.upc ?? "",
+      ean: b.ean ?? "",
+      mpn: b.mpn ?? "",
+      isbn: b.isbn ?? "",
+
       taxId: b.taxId || undefined,
-      dimensions, // Properly saved dimensions
-      prices, // Saving prices correctly
-      imageUrl: b.imageUrl || "", // <- from Cloudinary
+
+      dimensions: normalizeDimensions(b.dimensions),
+      prices: normalizePrices(b.prices) ?? {},
+
+      imageUrl: b.imageUrl ?? "",
     });
 
     await doc.save();
@@ -66,9 +107,7 @@ export const createItem = async (req, res) => {
   }
 };
 
-
-
-
+/* --------------------------------- getOne -------------------------------- */
 
 export const getItem = async (req, res) => {
   try {
@@ -80,6 +119,8 @@ export const getItem = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch item" });
   }
 };
+
+/* -------------------------------- search --------------------------------- */
 
 export const searchItems = async (req, res) => {
   try {
@@ -96,11 +137,22 @@ export const searchItems = async (req, res) => {
   }
 };
 
+/* ------------------------------ check SKU -------------------------------- */
+
 export const checkSku = async (req, res) => {
   try {
     const sku = (req.query.sku || "").trim();
+    const excludeId = (req.query.excludeId || "").trim();
+
     if (!sku) return res.json({ exists: false });
-    const exists = await Item.exists({ sku });
+
+    const query = { sku };
+    if (excludeId) {
+      // exclude current item when editing
+      query._id = { $ne: excludeId };
+    }
+
+    const exists = await Item.exists(query);
     res.json({ exists: !!exists });
   } catch (e) {
     console.error(e);
@@ -108,18 +160,65 @@ export const checkSku = async (req, res) => {
   }
 };
 
+/* --------------------------------- update -------------------------------- */
+
 export const updateItem = async (req, res) => {
   try {
-    const patch = { ...req.body };
+    const id = req.params.id;
+    const b = req.body;
+
+    // If SKU provided, ensure it's not taken by someone else
+    if (b.sku && b.sku.trim()) {
+      const taken = await Item.exists({ sku: b.sku.trim(), _id: { $ne: id } });
+      if (taken) return res.status(400).json({ error: "SKU already exists" });
+    }
+
+    const patch = {
+      // primitive fields (only set when present)
+      ...(b.type !== undefined ? { type: b.type } : {}),
+      ...(b.name !== undefined ? { name: b.name } : {}),
+      ...(b.sku !== undefined ? { sku: b.sku || undefined } : {}),
+      ...(b.unit !== undefined ? { unit: b.unit } : {}),
+      ...(b.manufacturer !== undefined ? { manufacturer: b.manufacturer } : {}),
+      ...(b.brand !== undefined ? { brand: b.brand } : {}),
+      ...(b.upc !== undefined ? { upc: b.upc } : {}),
+      ...(b.ean !== undefined ? { ean: b.ean } : {}),
+      ...(b.mpn !== undefined ? { mpn: b.mpn } : {}),
+      ...(b.isbn !== undefined ? { isbn: b.isbn } : {}),
+      ...(b.taxId !== undefined ? { taxId: b.taxId || undefined } : {}),
+      ...(b.imageUrl !== undefined ? { imageUrl: b.imageUrl } : {}),
+    };
+
+    // numbers
     ["price", "stock", "weight"].forEach((k) => {
-      if (patch[k] !== undefined && patch[k] !== "")
-        patch[k] = Number(patch[k]);
+      if (b[k] !== undefined) {
+        const n = coerceNumber(b[k]);
+        if (n !== undefined) patch[k] = n;
+      }
     });
 
-    const it = await Item.findByIdAndUpdate(req.params.id, patch, {
+    // boolean
+    if (b.returnable !== undefined) {
+      const bool = coerceBoolean(b.returnable);
+      if (bool !== undefined) patch.returnable = bool;
+    }
+
+    // complex
+    if (b.dimensions !== undefined) {
+      patch.dimensions = normalizeDimensions(b.dimensions);
+    }
+    if (b.prices !== undefined) {
+      patch.prices = normalizePrices(b.prices) ?? {};
+    }
+
+    // never allow _id change
+    delete patch._id;
+
+    const it = await Item.findByIdAndUpdate(id, patch, {
       new: true,
       runValidators: true,
     });
+
     if (!it) return res.status(404).json({ error: "Item not found" });
     res.json(it);
   } catch (e) {
@@ -127,6 +226,8 @@ export const updateItem = async (req, res) => {
     res.status(500).json({ error: "Failed to update item" });
   }
 };
+
+/* --------------------------------- delete -------------------------------- */
 
 export const deleteItem = async (req, res) => {
   try {

@@ -1,3 +1,4 @@
+//models/salesOrder.js
 import mongoose from 'mongoose';
 
 const SalesOrderItemSchema = new mongoose.Schema({
