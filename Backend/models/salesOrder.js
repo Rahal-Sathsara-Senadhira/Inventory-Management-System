@@ -53,6 +53,7 @@ const SalesOrderSchema = new mongoose.Schema({
   adjustment: { type: Number, default: 0 },
   roundOff: { type: Number, default: 0 },
 
+  // Commercial lifecycle (kept as-is)
   status: {
     type: String,
     enum: ['draft', 'confirmed', 'delivered', 'cancelled'],
@@ -63,10 +64,33 @@ const SalesOrderSchema = new mongoose.Schema({
   deliveredAt: Date,
   cancelledAt: Date,
 
+  // Warehouse fulfillment workflow (NEW, non-breaking)
+  fulfillmentStatus: {
+    type: String,
+    enum: ['new','picking','packing','ready','shipped','delivered','cancelled'],
+    default: 'new',
+    index: true
+  },
+  fulfillmentAssignee: String,
+  fulfillmentNotes: String,
+  fulfillmentHistory: [{
+    at: { type: Date, default: Date.now },
+    event: String,
+  }],
+  pickedAt: Date,
+  packedAt: Date,
+  readyAt: Date,
+  shippedAt: Date,
+  // deliveredAt already exists above (commercial); we’ll reuse it for fulfillment final
+
   notes: String,
   terms: String,
 
   filesMeta: [FileMetaSchema]
 }, { timestamps: true });
+
+SalesOrderSchema.index({ salesOrderNo: 1 }, { unique: true });
+SalesOrderSchema.index({ fulfillmentStatus: 1 });
+SalesOrderSchema.index({ customerId: 1 });
 
 export default mongoose.model('SalesOrder', SalesOrderSchema);
