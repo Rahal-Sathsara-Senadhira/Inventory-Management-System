@@ -1,5 +1,6 @@
 // controllers/itemController.js
 import Item from "../models/Item.js";
+import { uploadBuffer } from "../config/cloudinary.js";
 
 /* -------------------------- helper coercion utils ------------------------- */
 
@@ -51,6 +52,7 @@ const normalizePrices = (raw) => {
 };
 
 /* --------------------------------- list ---------------------------------- */
+
 export const listItems = async (_req, res) => {
   try {
     const items = await Item.find().sort({ createdAt: -1 });
@@ -62,9 +64,21 @@ export const listItems = async (_req, res) => {
 };
 
 /* --------------------------------- create -------------------------------- */
+
 export const createItem = async (req, res) => {
   try {
     const b = req.body;
+
+    // If an image file was uploaded, send to Cloudinary
+    let imageUrl = b.imageUrl ?? "";
+    if (req.file && req.file.buffer) {
+      const up = await uploadBuffer(
+        req.file.buffer,
+        req.file.originalname,
+        `${process.env.CLOUDINARY_FOLDER || "ims"}/items`
+      );
+      imageUrl = up.secure_url;
+    }
 
     const doc = new Item({
       type: b.type,
@@ -89,7 +103,7 @@ export const createItem = async (req, res) => {
       dimensions: normalizeDimensions(b.dimensions),
       prices: normalizePrices(b.prices) ?? {},
 
-      imageUrl: b.imageUrl ?? "",
+      imageUrl,
     });
 
     await doc.save();
@@ -104,15 +118,12 @@ export const createItem = async (req, res) => {
 };
 
 /* --------------------------------- getOne -------------------------------- */
+
 export const getItem = async (req, res) => {
   try {
-    const it = await Item.findById(req.params.id).lean();
+    const it = await Item.findById(req.params.id);
     if (!it) return res.status(404).json({ error: "Item not found" });
-
-    // For services, availability isn't capped; for goods we send stock.
-    const availableQty = it.type === "Goods" ? it.stock : null;
-
-    res.json({ ...it, availableQty });
+    res.json(it);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch item" });
@@ -120,22 +131,16 @@ export const getItem = async (req, res) => {
 };
 
 /* -------------------------------- search --------------------------------- */
+
 export const searchItems = async (req, res) => {
   try {
     const q = (req.query.q || "").trim();
     if (!q) return res.json([]);
-
     const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     const items = await Item.find({ $or: [{ name: rx }, { sku: rx }] })
       .limit(20)
       .lean();
-
-    const mapped = items.map((it) => ({
-      ...it,
-      availableQty: it.type === "Goods" ? it.stock : null,
-    }));
-
-    res.json(mapped);
+    res.json(items);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Search failed" });
@@ -143,6 +148,7 @@ export const searchItems = async (req, res) => {
 };
 
 /* ------------------------------ check SKU -------------------------------- */
+
 export const checkSku = async (req, res) => {
   try {
     const sku = (req.query.sku || "").trim();
@@ -151,7 +157,9 @@ export const checkSku = async (req, res) => {
     if (!sku) return res.json({ exists: false });
 
     const query = { sku };
-    if (excludeId) query._id = { $ne: excludeId };
+    if (excludeId) {
+      query._id = { $ne: excludeId };
+    }
 
     const exists = await Item.exists(query);
     res.json({ exists: !!exists });
@@ -162,11 +170,13 @@ export const checkSku = async (req, res) => {
 };
 
 /* --------------------------------- update -------------------------------- */
+
 export const updateItem = async (req, res) => {
   try {
     const id = req.params.id;
     const b = req.body;
 
+    // If SKU provided, ensure unique
     if (b.sku && b.sku.trim()) {
       const taken = await Item.exists({ sku: b.sku.trim(), _id: { $ne: id } });
       if (taken) return res.status(400).json({ error: "SKU already exists" });
@@ -184,7 +194,6 @@ export const updateItem = async (req, res) => {
       ...(b.mpn !== undefined ? { mpn: b.mpn } : {}),
       ...(b.isbn !== undefined ? { isbn: b.isbn } : {}),
       ...(b.taxId !== undefined ? { taxId: b.taxId || undefined } : {}),
-      ...(b.imageUrl !== undefined ? { imageUrl: b.imageUrl } : {}),
     };
 
     ["price", "stock", "weight"].forEach((k) => {
@@ -206,6 +215,18 @@ export const updateItem = async (req, res) => {
       patch.prices = normalizePrices(b.prices) ?? {};
     }
 
+    // Image upload if provided
+    if (req.file && req.file.buffer) {
+      const up = await uploadBuffer(
+        req.file.buffer,
+        req.file.originalname,
+        `${process.env.CLOUDINARY_FOLDER || "ims"}/items`
+      );
+      patch.imageUrl = up.secure_url;
+    } else if (b.imageUrl !== undefined) {
+      patch.imageUrl = b.imageUrl; // allow clearing/overwriting via URL
+    }
+
     delete patch._id;
 
     const it = await Item.findByIdAndUpdate(id, patch, {
@@ -222,6 +243,7 @@ export const updateItem = async (req, res) => {
 };
 
 /* --------------------------------- delete -------------------------------- */
+
 export const deleteItem = async (req, res) => {
   try {
     const it = await Item.findByIdAndDelete(req.params.id);

@@ -1,39 +1,34 @@
-// Backend/routes/salesOrders.js
+// routes/salesOrders.js
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
+import multer from "multer";
 import {
-  getNextOrderNumber,
   createSalesOrder,
   getSalesOrder,
   listSalesOrders,
   updateSalesOrder,
   deleteSalesOrder,
+  getNextOrderNumber,
+  setSalesOrderStatus,
 } from "../controllers/salesOrderController.js";
 
-const router = Router();
+export const salesOrdersRouter = Router();
 
-// Endpoint for getting the next sales order number
-router.get('/next-order-number', getNextOrderNumber);
-
-
-// Rate limiter for write operations (creating/updating orders)
-const writeLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 60,             // Max 60 requests per minute
-  standardHeaders: true,
-  legacyHeaders: false,
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 10 }, // 10MB per file
 });
 
-// Sales Order routes
-router.post("/", writeLimiter, createSalesOrder);      // Create Sales Order
-router.get("/", listSalesOrders);                      // List Sales Orders
-router.get("/:id", getSalesOrder);                     // Get a specific Sales Order
-router.patch("/:id", writeLimiter, updateSalesOrder);  // Update a Sales Order
-router.delete("/:id", writeLimiter, deleteSalesOrder); // Delete a Sales Order
+// list + helpers
+salesOrdersRouter.get("/", listSalesOrders);
+salesOrdersRouter.get("/next-order-number", getNextOrderNumber);
+salesOrdersRouter.get("/:id", getSalesOrder);
 
+// create/update with files
+salesOrdersRouter.post("/", upload.array("files", 10), createSalesOrder);
+salesOrdersRouter.put("/:id", upload.array("files", 10), updateSalesOrder);
 
+// status only
+salesOrdersRouter.patch("/:id/status", setSalesOrderStatus);
 
-
-
-export default router;
-export const salesOrdersRouter = router;
+// delete
+salesOrdersRouter.delete("/:id", deleteSalesOrder);

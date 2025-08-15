@@ -1,44 +1,55 @@
 // controllers/salesOrderController.js
 import SalesOrder from "../models/salesOrder.js";
+import Item from "../models/Item.js";
+import { uploadBuffer } from "../config/cloudinary.js";
 
-/** Map "", null to undefined for ObjectId fields */
+/* ------------------------------- helpers ------------------------------- */
+
+const parseJSON = (v, fallback) => {
+  if (typeof v !== "string") return v ?? fallback;
+  try { return JSON.parse(v); } catch { return fallback; }
+};
+
 const toIdOrUndef = (v) => (v && String(v).trim() ? v : undefined);
+const num = (x, d = 0) =>
+  x === "" || x === null || x === undefined ? d : Number(x);
 
-/** Strip empty tax ids to avoid CastError */
-const sanitizeOrder = (body) => {
-  const b = { ...body };
+const sanitizeOrder = (raw) => {
+  const b = { ...raw };
+  delete b.filesMeta; // never trust from client
 
-  // top-level id fields
-  b.customerId      = toIdOrUndef(b.customerId);
-  b.shippingTaxId   = toIdOrUndef(b.shippingTaxId);
+  b.customerId    = toIdOrUndef(b.customerId);
+  b.shippingTaxId = toIdOrUndef(b.shippingTaxId);
 
-  // numbers (ensure numeric)
-  const num = (x) => (x === "" || x === null || x === undefined ? undefined : Number(x));
-  if (b.shippingCharge !== undefined) b.shippingCharge = num(b.shippingCharge) ?? 0;
-  if (b.adjustment     !== undefined) b.adjustment     = num(b.adjustment) ?? 0;
-  if (b.roundOff       !== undefined) b.roundOff       = num(b.roundOff) ?? 0;
+  b.items  = parseJSON(b.items,  []);
+  b.totals = parseJSON(b.totals, {});
 
-  // items
-  b.items = Array.isArray(b.items) ? b.items.map((it) => ({
-    ...it,
-    itemId:  toIdOrUndef(it.itemId),
-    taxId:   toIdOrUndef(it.taxId),
-    quantity: num(it.quantity) ?? 1,
-    rate:     num(it.rate) ?? 0,
-    discount: num(it.discount) ?? 0
-  })) : [];
+  b.shippingCharge = num(b.shippingCharge, 0);
+  b.adjustment     = num(b.adjustment, 0);
+  b.roundOff       = num(b.roundOff, 0);
 
-  // totals (optional)
+  if (Array.isArray(b.items)) {
+    b.items = b.items.map((it) => ({
+      ...it,
+      itemId:  toIdOrUndef(it.itemId),
+      taxId:   toIdOrUndef(it.taxId),
+      quantity: num(it.quantity, 1),
+      rate:     num(it.rate, 0),
+      discount: num(it.discount, 0),
+    }));
+  } else {
+    b.items = [];
+  }
+
   if (b.totals && typeof b.totals === "object") {
     const t = b.totals;
     b.totals = {
-      ...t,
-      subTotal:       num(t.subTotal) ?? 0,
-      taxTotal:       num(t.taxTotal) ?? 0,
-      shippingCharge: num(t.shippingCharge) ?? 0,
-      adjustment:     num(t.adjustment) ?? 0,
-      roundOff:       num(t.roundOff) ?? 0,
-      grandTotal:     num(t.grandTotal) ?? 0,
+      subTotal:       num(t.subTotal, 0),
+      taxTotal:       num(t.taxTotal, 0),
+      shippingCharge: num(t.shippingCharge, 0),
+      adjustment:     num(t.adjustment, 0),
+      roundOff:       num(t.roundOff, 0),
+      grandTotal:     num(t.grandTotal, 0),
       currency:       t.currency || "USD",
     };
   }
@@ -46,102 +57,232 @@ const sanitizeOrder = (body) => {
   return b;
 };
 
-// OPTIONAL: if you want to denormalize customerName on the fly for the UI
+const uploadFilesToCloudinary = async (files, folder) => {
+  const upFolder = `${process.env.CLOUDINARY_FOLDER || "ims"}/${folder}`;
+  const results = await Promise.all(
+    (files || []).map(async (f) => {
+      const r = await uploadBuffer(f.buffer, f.originalname, upFolder);
+      return {
+        name: f.originalname,
+        size: f.size,
+        type: f.mimetype,
+        url: r.secure_url,
+        publicId: r.public_id,
+      };
+    })
+  );
+  return results;
+};
+
+// OPTIONAL: annotate for UI table
 const addCustomerName = (doc) => {
   const c = doc?.customerId;
   const name = c?.displayName || c?.name || c?.firstName || c?.lastName || "";
   return { ...doc, customerName: name };
 };
 
-// Create a new Sales Order
-export const createSalesOrder = async (req, res) => {
-  try {
-    const clean = sanitizeOrder(req.body);
-    const newSalesOrder = new SalesOrder(clean);
-    await newSalesOrder.save();
-    res.status(201).json(newSalesOrder);
-  } catch (error) {
-    console.error(error);
-    // surface duplicate key nicely
-    if (error?.code === 11000) {
-      return res.status(400).json({ error: "Duplicate key: " + JSON.stringify(error.keyValue) });
+/* ----------------------------- stock helpers ---------------------------- */
+
+const makeQtyMap = (items = []) => {
+  const m = new Map();
+  for (const it of items) {
+    if (!it || !it.itemId) continue;
+    const key = String(it.itemId);
+    const q = Number(it.quantity || 0);
+    if (!Number.isFinite(q) || q <= 0) continue;
+    m.set(key, (m.get(key) || 0) + q);
+  }
+  return m;
+};
+
+// diff = newQtyMap - oldQtyMap (positive => need extra decrease, negative => need to increase back)
+const diffQtyMaps = (oldMap, newMap) => {
+  const keys = new Set([...oldMap.keys(), ...newMap.keys()]);
+  const out = new Map();
+  for (const k of keys) {
+    const d = (newMap.get(k) || 0) - (oldMap.get(k) || 0);
+    if (d !== 0) out.set(k, d);
+  }
+  return out;
+};
+
+// direction: "decrease" (subtract stock) or "increase" (add back)
+const applyStockChange = async (session, qtyMap, direction = "decrease") => {
+  for (const [itemId, qty] of qtyMap.entries()) {
+    const n = Number(qty || 0);
+    if (!Number.isFinite(n) || n <= 0) continue;
+
+    const it = await Item.findById(itemId).session(session).select("name stock");
+    if (!it) throw new Error(`Item not found: ${itemId}`);
+
+    const delta = direction === "decrease" ? -n : n;
+
+    if (direction === "decrease" && (it.stock ?? 0) < n) {
+      throw new Error(
+        `Insufficient stock for "${it.name || itemId}" (have ${it.stock ?? 0}, need ${n})`
+      );
     }
-    res.status(500).json({ error: "Failed to create sales order" });
+
+    it.stock = Number(it.stock || 0) + delta;
+    await it.save({ session });
   }
 };
 
-// Get a specific Sales Order by ID (POPULATED)
+/* -------------------------------- CRUD --------------------------------- */
+
+export const createSalesOrder = async (req, res) => {
+  const session = await SalesOrder.startSession();
+  session.startTransaction();
+  try {
+    const clean = sanitizeOrder(req.body);
+    const meta = await uploadFilesToCloudinary(req.files, "sales_orders");
+    if (meta.length) clean.filesMeta = meta;
+
+    const newSalesOrder = new SalesOrder(clean);
+    await newSalesOrder.save({ session });
+
+    // Reduce stock only if created as confirmed
+    if ((clean.status || "draft") === "confirmed") {
+      const qmap = makeQtyMap(clean.items);
+      await applyStockChange(session, qmap, "decrease");
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+    res.status(201).json(newSalesOrder);
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error(error);
+    if (error?.code === 11000) {
+      return res
+        .status(400)
+        .json({ error: "Duplicate key: " + JSON.stringify(error.keyValue) });
+    }
+    res.status(500).json({ error: error.message || "Failed to create sales order" });
+  }
+};
+
 export const getSalesOrder = async (req, res) => {
   const { id } = req.params;
   try {
     const salesOrder = await SalesOrder.findById(id)
       .populate("customerId", "displayName name");
-    if (!salesOrder) {
-      return res.status(404).json({ error: "Sales order not found" });
-    }
+    if (!salesOrder) return res.status(404).json({ error: "Sales order not found" });
     const json = salesOrder.toObject();
-    const withName = addCustomerName(json);
-    res.status(200).json(withName);
+    res.status(200).json(addCustomerName(json));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to get sales order" });
   }
 };
 
-// List all Sales Orders (POPULATED + SORTED + LEAN)
 export const listSalesOrders = async (_req, res) => {
   try {
     const salesOrders = await SalesOrder.find()
       .populate("customerId", "displayName name")
       .sort({ createdAt: -1 })
       .lean();
-    const withNames = salesOrders.map(addCustomerName);
-    res.status(200).json(withNames);
+    res.status(200).json(salesOrders.map(addCustomerName));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to list sales orders" });
   }
 };
 
-// Update a Sales Order
 export const updateSalesOrder = async (req, res) => {
   const { id } = req.params;
+  const session = await SalesOrder.startSession();
+  session.startTransaction();
   try {
     const clean = sanitizeOrder(req.body);
-    const updated = await SalesOrder.findByIdAndUpdate(
-      id,
-      clean,
-      { new: true, runValidators: true }
-    ).populate("customerId", "displayName name");
-    if (!updated) {
+    const meta = await uploadFilesToCloudinary(req.files, "sales_orders");
+
+    const current = await SalesOrder.findById(id).session(session);
+    if (!current) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ error: "Sales order not found" });
     }
+
+    // If files uploaded now, append them
+    if (meta.length) {
+      clean.filesMeta = [...(current.filesMeta || []), ...meta];
+    }
+
+    const wasConfirmed = (current.status || "draft") === "confirmed";
+    const willBeConfirmed = (clean.status || current.status || "draft") === "confirmed";
+
+    if (wasConfirmed || willBeConfirmed) {
+      const oldMap = makeQtyMap(current.items || []);
+      const newMap = makeQtyMap(clean.items || []);
+      const diff = diffQtyMaps(oldMap, newMap);
+
+      const decMap = new Map();
+      const incMap = new Map();
+      for (const [k, d] of diff.entries()) {
+        if (d > 0) decMap.set(k, d);      // need more stock decrease
+        else if (d < 0) incMap.set(k, -d); // give back
+      }
+
+      if (decMap.size > 0) await applyStockChange(session, decMap, "decrease");
+      if (incMap.size > 0) await applyStockChange(session, incMap, "increase");
+    }
+
+    const updated = await SalesOrder.findByIdAndUpdate(id, clean, {
+      new: true,
+      runValidators: true,
+      session,
+    }).populate("customerId", "displayName name");
+
+    await session.commitTransaction();
+    session.endSession();
+
     res.status(200).json(addCustomerName(updated.toObject()));
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
     console.error(error);
     if (error?.code === 11000) {
-      return res.status(400).json({ error: "Duplicate key: " + JSON.stringify(error.keyValue) });
+      return res
+        .status(400)
+        .json({ error: "Duplicate key: " + JSON.stringify(error.keyValue) });
     }
-    res.status(500).json({ error: "Failed to update sales order" });
+    res.status(500).json({ error: error.message || "Failed to update sales order" });
   }
 };
 
-// Delete a Sales Order by ID
 export const deleteSalesOrder = async (req, res) => {
   const { id } = req.params;
+  const session = await SalesOrder.startSession();
+  session.startTransaction();
   try {
-    const result = await SalesOrder.deleteOne({ _id: id });
-    if (result.deletedCount === 0) {
+    const order = await SalesOrder.findById(id).session(session);
+    if (!order) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ error: "Sales order not found" });
     }
+
+    // If it was confirmed, we add stock back on delete
+    if ((order.status || "draft") === "confirmed") {
+      const qmap = makeQtyMap(order.items || []);
+      await applyStockChange(session, qmap, "increase");
+    }
+
+    await SalesOrder.deleteOne({ _id: id }).session(session);
+    await session.commitTransaction();
+    session.endSession();
+
     res.status(200).json({ message: "Sales order deleted successfully" });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
     console.error(error);
     res.status(500).json({ error: "Failed to delete sales order" });
   }
 };
 
-// Get the next order number (SO-0001, SO-0002, etc.)
 export const getNextOrderNumber = async (_req, res) => {
   try {
     const last = await SalesOrder.findOne().sort({ createdAt: -1 }).limit(1);
@@ -158,5 +299,61 @@ export const getNextOrderNumber = async (_req, res) => {
   } catch (error) {
     console.error("Error fetching next order number:", error);
     res.status(500).json({ error: "Failed to get next sales order number" });
+  }
+};
+
+const VALID_STATUSES = ['draft', 'confirmed', 'delivered', 'cancelled'];
+
+export const setSalesOrderStatus = async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body || {};
+  const next = String(status || '').trim().toLowerCase();
+
+  if (!VALID_STATUSES.includes(next)) {
+    return res.status(400).json({ error: `Invalid status: ${status}` });
+  }
+
+  const session = await SalesOrder.startSession();
+  session.startTransaction();
+
+  try {
+    const order = await SalesOrder.findById(id).session(session);
+    if (!order) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ error: "Sales order not found" });
+    }
+
+    const prev = order.status || 'draft';
+
+    // Stock transitions
+    if (prev !== 'confirmed' && next === 'confirmed') {
+      // just got confirmed -> decrease
+      const qmap = makeQtyMap(order.items || []);
+      await applyStockChange(session, qmap, "decrease");
+    } else if (prev === 'confirmed' && next === 'cancelled') {
+      // was confirmed, now cancelled -> increase back
+      const qmap = makeQtyMap(order.items || []);
+      await applyStockChange(session, qmap, "increase");
+    }
+    // confirmed -> delivered : no stock change
+    // delivered -> cancelled : typically not allowed—decide policy if you need to handle
+
+    const now = new Date();
+    const patch = { status: next };
+    if (next === 'confirmed') patch.confirmedAt = order.confirmedAt ?? now;
+    if (next === 'delivered') patch.deliveredAt = order.deliveredAt ?? now;
+    if (next === 'cancelled') patch.cancelledAt = order.cancelledAt ?? now;
+
+    const updated = await SalesOrder.findByIdAndUpdate(id, patch, { new: true, session });
+    await session.commitTransaction();
+    session.endSession();
+
+    res.json(updated);
+  } catch (e) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to update status" });
   }
 };

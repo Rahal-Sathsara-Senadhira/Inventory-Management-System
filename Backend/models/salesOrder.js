@@ -20,8 +20,15 @@ const TotalsSchema = new mongoose.Schema({
   currency: { type: String, default: 'USD' }
 }, { _id: false });
 
+const FileMetaSchema = new mongoose.Schema({
+  name: String,
+  size: Number,
+  type: String,
+  url: String,        // Cloudinary secure_url
+  publicId: String,   // Cloudinary public_id (optional, for deletes)
+}, { _id: false });
+
 const SalesOrderSchema = new mongoose.Schema({
-  // add a generated uid that satisfies your existing unique index
   uid: {
     type: String,
     unique: true,
@@ -35,23 +42,31 @@ const SalesOrderSchema = new mongoose.Schema({
   expectedShipmentDate: String,
   paymentTerm: String,
   deliveryMethod: String,
-  salespersonId: String,       // keep as string for now
-  priceListId: String,         // keep as string for now
+  salespersonId: String,
+  priceListId: String,
+
   items: [SalesOrderItemSchema],
   totals: TotalsSchema,
+
   shippingTaxId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tax' },
   shippingCharge: { type: Number, default: 0 },
   adjustment: { type: Number, default: 0 },
   roundOff: { type: Number, default: 0 },
-  status: { type: String, enum: ['draft', 'confirmed'], default: 'draft', index: true },
+
+  status: {
+    type: String,
+    enum: ['draft', 'confirmed', 'delivered', 'cancelled'],
+    default: 'draft',
+    index: true
+  },
+  confirmedAt: Date,
+  deliveredAt: Date,
+  cancelledAt: Date,
+
   notes: String,
   terms: String,
-  filesMeta: [{
-    name: String,
-    size: Number,
-    type: String,
-    url: String
-  }]
+
+  filesMeta: [FileMetaSchema]
 }, { timestamps: true });
 
 export default mongoose.model('SalesOrder', SalesOrderSchema);

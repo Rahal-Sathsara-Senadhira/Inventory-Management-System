@@ -14,6 +14,7 @@ import CustomerDetails from "./pages/Sales/CustomerDetails.jsx";
 import SalesOrders from "./pages/Sales/SalesOrders.jsx";
 import AddSalesOrders from "./pages/Sales/AddSalesOrders.jsx";
 import EditItemForm from "./pages/Items/EditItemForm.jsx";
+import ViewSalesOrder from "./pages/Sales/ViewSalesOrder.jsx";
 
 const App = () => {
   
@@ -36,6 +37,7 @@ const App = () => {
         <Route path="/inventory/:type/items/:id" element={<ItemDetails />} />
         <Route path="/inventory/:type/items/:id/edit" element={<EditItemForm />} />
         <Route path="/inventory/:type/customers/:cus_id" element={<CustomerDetails />} />
+        <Route path="/inventory/:type/salesOrders/:id" element={<ViewSalesOrder />} />
 
         {/* Add more child routes here */}
       </Route>

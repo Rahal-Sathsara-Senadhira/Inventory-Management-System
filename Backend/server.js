@@ -1,5 +1,4 @@
-//server.js
-
+// server.js (only the relevant differences shown)
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -9,18 +8,14 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
 import path from "path";
-import multer from "multer"; // <-- Add multer
 
-// Import routes (your existing + new)
-import { salesOrdersRouter } from "./routes/salesOrders.js";   // existing in your project
-import { customersRouter } from "./routes/customer.js";        // existing
-import { salespersonsRouter } from "./routes/salesPersons.js"; // existing
+// Routers
+import { salesOrdersRouter } from "./routes/salesOrders.js";
+import { customersRouter } from "./routes/customer.js";
+import { salespersonsRouter } from "./routes/salesPersons.js";
 import itemsRouter from "./routes/items.js";
 import priceListsRouter from "./routes/priceLists.js";
 import taxesRouter from "./routes/taxes.js";
-
-// Set up multer for file uploads
-const upload = multer({ dest: "uploads/" });  // Specifies the folder where the files will be stored temporarily
 
 const PORT = process.env.PORT || 5000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
@@ -34,22 +29,21 @@ if (!MONGO_URI) {
 const app = express();
 app.set("trust proxy", 1);
 
-// Security & basics
 app.use(helmet());
 app.use(compression());
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(morgan("dev"));
 
-// CORS (support list, comma-separated)
-const allowedOrigins = (FRONTEND_ORIGIN || "")
+// CORS
+const allowed = (FRONTEND_ORIGIN || "")
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
+    if (!origin || allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
     return cb(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -57,21 +51,18 @@ app.use(cors({
   allowedHeaders: ["Content-Type","Authorization"]
 }));
 
-// Rate limit example for search endpoints
+// Rate limit example
 const searchLimiter = rateLimit({ windowMs: 60_000, max: 120 });
 app.use("/api/items/search", searchLimiter);
 
-// Static uploads
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), {
-  maxAge: "1d",
-  etag: true
-}));
+// (Optional) keep legacy local uploads serving, if you already stored files there
+// app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), { maxAge: "1d", etag: true }));
 
-// Routes (Adding multer middleware to the POST request)
+// Routes
 app.use("/api/sales-orders", salesOrdersRouter);
 app.use("/api/customers", customersRouter);
 app.use("/api/salespersons", salespersonsRouter);
-app.use("/api/items", upload.single("image"), itemsRouter);  // <-- Add multer here for handling image uploads
+app.use("/api/items", itemsRouter);
 app.use("/api/price-lists", priceListsRouter);
 app.use("/api/taxes", taxesRouter);
 
@@ -103,7 +94,6 @@ let server;
   }
 })();
 
-// Graceful shutdown
 const shutdown = async (signal) => {
   console.log(`\n${signal} received. Shutting down...`);
   try {
