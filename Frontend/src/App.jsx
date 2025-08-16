@@ -42,6 +42,8 @@ const App = () => {
         <Route path="/inventory/:type/salesOrders/:id" element={<ViewSalesOrder />} />
         <Route path="packages" element={<Packages />} />
         <Route path="delivered-packages" element={<DeliveredPackages />} />
+        <Route path="/inventory/:type/delivered-packages" element={<DeliveredPackages />} />
+
 
 
       </Route>

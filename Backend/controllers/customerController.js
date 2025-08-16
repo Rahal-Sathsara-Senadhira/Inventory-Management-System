@@ -1,3 +1,4 @@
+//customerCntroller.js
 import Customer from "../models/customer.js";
 import Joi from "joi";
 

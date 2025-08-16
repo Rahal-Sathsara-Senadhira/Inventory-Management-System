@@ -1,4 +1,4 @@
-// src/lib/api.js
+// Frontend/lib/api.js
 const API_BASE = import.meta.env?.VITE_API_BASE || "";
 
 async function http(path, opts = {}) {
@@ -30,4 +30,21 @@ export const FulfillmentAPI = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+};
+
+// 👉 New: base orders (for dashboard, etc.)
+export const SalesOrdersAPI = {
+  list: () => http(`/api/sales-orders`),
+  setPayment: (id, payload) =>
+    http(`/api/sales-orders/${id}/payment`, { method: "PATCH", body: JSON.stringify(payload) }),
+};
+
+// 👉 New: reports endpoints
+export const ReportsAPI = {
+  topItems: (limit = 5, periodDays = 90) =>
+    http(`/api/reports/top-items?limit=${limit}&periodDays=${periodDays}`),
+  salesSummary: (group = "month", periodDays = 180) =>
+    http(`/api/reports/sales-summary?group=${group}&periodDays=${periodDays}`),
+  productDetails: (periodDays = 30, lowStock = 10) =>
+    http(`/api/reports/product-details?periodDays=${periodDays}&lowStock=${lowStock}`),
 };

@@ -53,7 +53,7 @@ const SalesOrderSchema = new mongoose.Schema({
   adjustment: { type: Number, default: 0 },
   roundOff: { type: Number, default: 0 },
 
-  // Commercial lifecycle (kept as-is)
+  // Commercial lifecycle
   status: {
     type: String,
     enum: ['draft', 'confirmed', 'delivered', 'cancelled'],
@@ -64,7 +64,7 @@ const SalesOrderSchema = new mongoose.Schema({
   deliveredAt: Date,
   cancelledAt: Date,
 
-  // Warehouse fulfillment workflow (NEW, non-breaking)
+  // Warehouse fulfillment workflow
   fulfillmentStatus: {
     type: String,
     enum: ['new','picking','packing','ready','shipped','delivered','cancelled'],
@@ -81,7 +81,18 @@ const SalesOrderSchema = new mongoose.Schema({
   packedAt: Date,
   readyAt: Date,
   shippedAt: Date,
-  // deliveredAt already exists above (commercial); we’ll reuse it for fulfillment final
+  // deliveredAt reused above for fulfillment final
+
+  // 💳 Payments (NEW)
+  paymentStatus: {
+    type: String,
+    enum: ['unpaid', 'partially_paid', 'paid', 'overdue'],
+    default: 'unpaid',
+    index: true
+  },
+  paymentDueDate: Date,   // set when invoice is issued
+  paymentDate: Date,      // set when fully paid
+  amountPaid: { type: Number, default: 0 }, // cumulative paid amount
 
   notes: String,
   terms: String,

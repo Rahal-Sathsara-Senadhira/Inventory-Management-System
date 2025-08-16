@@ -9,6 +9,7 @@ import {
   deleteSalesOrder,
   getNextOrderNumber,
   setSalesOrderStatus,
+  setPaymentStatus,
 } from "../controllers/salesOrderController.js";
 
 export const salesOrdersRouter = Router();
@@ -30,5 +31,9 @@ salesOrdersRouter.put("/:id", upload.array("files", 10), updateSalesOrder);
 // status only
 salesOrdersRouter.patch("/:id/status", setSalesOrderStatus);
 
+// 💳 payment status (NEW)
+salesOrdersRouter.patch("/:id/payment", setPaymentStatus);
+
 // delete
 salesOrdersRouter.delete("/:id", deleteSalesOrder);
+

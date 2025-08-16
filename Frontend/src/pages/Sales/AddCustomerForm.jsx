@@ -1,3 +1,4 @@
+// src/pages/Customers/AddCustomerForm.jsx
 import React, { useState, useEffect, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import CustomSelect from "../../components/ui/CustomSelect";
@@ -12,8 +13,11 @@ const normEmail = (s) => (s || "").trim().toLowerCase();
 const trim = (s) => (s || "").trim();
 const digitsOnly = (s) => (s.match(/\d/g) || []).join("");
 
+// 👇 add a tenant constant (fallback to "default" for dev)
+const TENANT_ID = import.meta.env?.VITE_TENANT_ID || "default";
+
 const AddCustomerForm = () => {
-  const { addCustomer, customers } = useContext(AppContext); // get helpers + list for duplicate checks
+  const { addCustomer, customers } = useContext(AppContext);
   const navigate = useNavigate();
   const { type } = useParams(); // /inventory/:type/customers/add-customers
 
@@ -60,7 +64,7 @@ const AddCustomerForm = () => {
     { value: "Dr", label: "Dr" },
   ];
 
-  // -------- validation (logic only, UI unchanged) --------
+  // -------- validation --------
   const validateForm = () => {
     const errors = [];
 
@@ -72,25 +76,20 @@ const AddCustomerForm = () => {
     const company = trim(formData.companyName);
     const sal = trim(formData.salutation);
 
-    // Required basics
     if (!firstName) errors.push("First Name is required.");
     if (!email) errors.push("Customer Email is required.");
     if (email && !emailRegex.test(email)) errors.push("Email format is invalid.");
     if (!mobile) errors.push("Mobile number is required.");
 
-    // Length sanity
     if (firstName.length > 50) errors.push("First Name is too long (max 50).");
     if (lastName.length > 50) errors.push("Last Name is too long (max 50).");
 
-    // Business rule
     if (formData.type === "Business" && !company) {
       errors.push("Company Name is required for Business customers.");
     }
 
-    // Salutation whitelist
     if (!allowedSalutations.has(sal)) errors.push("Invalid salutation.");
 
-    // Phone format + min digits
     const checkPhone = (label, val) => {
       if (!val) return;
       if (!phoneAllowRegex.test(val)) errors.push(`${label} has invalid characters.`);
@@ -99,17 +98,10 @@ const AddCustomerForm = () => {
     checkPhone("Mobile", mobile);
     checkPhone("Work Phone", workPhone);
 
-    // Duplicate checks (client-side hint; server must still enforce)
-    if (
-      email &&
-      customers.some((c) => normEmail(c.customerEmail) === email)
-    ) {
+    if (email && customers.some((c) => normEmail(c.customerEmail) === email)) {
       errors.push("This email is already registered.");
     }
-    if (
-      mobile &&
-      customers.some((c) => digitsOnly(c.mobile || "") === digitsOnly(mobile))
-    ) {
+    if (mobile && customers.some((c) => digitsOnly(c.mobile || "") === digitsOnly(mobile))) {
       errors.push("This mobile number is already registered.");
     }
 
@@ -151,7 +143,6 @@ const AddCustomerForm = () => {
       return;
     }
 
-    // Display name (trimmed)
     const displayName =
       trim(formData.salutation) && trim(formData.firstName) && trim(formData.lastName)
         ? `${trim(formData.salutation)} ${trim(formData.firstName)} ${trim(formData.lastName)}`
@@ -159,8 +150,9 @@ const AddCustomerForm = () => {
         ? `${trim(formData.firstName)} ${trim(formData.lastName)}`
         : trim(formData.companyName) || "Unnamed Customer";
 
-    // Payload normalization (logic only)
+    // IMPORTANT: include tenantId so backend validation passes
     const payload = {
+      tenantId: TENANT_ID, // 👈 add this line
       type: formData.type,
       salutation: trim(formData.salutation),
       firstName: trim(formData.firstName),
@@ -177,7 +169,6 @@ const AddCustomerForm = () => {
     };
 
     try {
-      // works for both sync (in-memory) and async (API-backed) contexts
       const saved = await Promise.resolve(addCustomer(payload));
       alert(saved && saved.cus_id ? `Customer saved with ID: ${saved.cus_id}` : "Customer saved.");
       navigate(`/inventory/${type}/customers`);
@@ -402,7 +393,6 @@ const AddCustomerForm = () => {
   );
 };
 
-// Reusable address component (UI unchanged)
 const AddressSection = ({ title, namePrefix, formData, onChange }) => {
   const fields = [
     { label: "Country", name: "country" },

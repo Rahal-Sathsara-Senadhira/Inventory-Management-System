@@ -5,23 +5,56 @@ import SalesOrder from "../models/salesOrder.js";
 
 const router = Router();
 
-/**
- * GET /api/fulfillment?q=&fulfillmentStatus=&page=&limit=
- * Returns rows for the Packages board/table
- * ✅ Only includes sales orders whose commercial status is 'confirmed'
- */
+function ymd(date) {
+  // returns yyyy-mm-dd from a Date
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 router.get("/", async (req, res) => {
   try {
     const { q = "", fulfillmentStatus = "all", page = 1, limit = 100 } = req.query;
 
-    // Base eligibility: ONLY confirmed orders go to packaging
+    // Eligibility base: must be commercially confirmed
     const match = { status: "confirmed" };
 
+    // 5-day shipment window (inclusive)
+    const today = new Date();
+    const fiveDays = new Date(today);
+    fiveDays.setDate(fiveDays.getDate() + 5);
+
+    const fromStr = ymd(today);
+    const toStr = ymd(fiveDays);
+
+    // Only include orders with expectedShipmentDate in [today .. today+5]
+    // expectedShipmentDate is a yyyy-mm-dd string in your model
+    match.expectedShipmentDate = { $gte: fromStr, $lte: toStr };
+
+    // Optional UI filter by fulfillmentStatus
     if (fulfillmentStatus && fulfillmentStatus !== "all") {
       match.fulfillmentStatus = fulfillmentStatus;
     }
+
+    // Hide delivered orders after the day ends
+    // Keep them visible only if delivered today (deliveredAt >= startOfToday)
+    const startToday = startOfToday();
+    match.$or = [
+      { fulfillmentStatus: { $ne: "delivered" } },
+      { deliveredAt: { $gte: startToday } }, // still show delivered today
+    ];
+
+    // Search text
     if (q) {
       match.$or = [
+        ...(match.$or || []),
         { salesOrderNo: new RegExp(q, "i") },
         { referenceNo: new RegExp(q, "i") },
         { fulfillmentAssignee: new RegExp(q, "i") },
@@ -47,7 +80,7 @@ router.get("/", async (req, res) => {
       {
         $project: {
           _id: 1,
-          status: 1, // <-- keep commercial status so the UI can double-check if needed
+          status: 1,
           salesOrderNo: 1,
           referenceNo: 1,
           itemsCount: { $size: { $ifNull: ["$items", []] } },
@@ -56,6 +89,8 @@ router.get("/", async (req, res) => {
           fulfillmentAssignee: 1,
           fulfillmentNotes: 1,
           fulfillmentHistory: 1,
+          expectedShipmentDate: 1, // <-- added for UI verification
+          deliveredAt: 1,          // <-- used to hide after day end
           updatedAt: 1,
           createdAt: 1,
           customerName: {
@@ -74,9 +109,7 @@ router.get("/", async (req, res) => {
 });
 
 /**
- * PATCH /api/fulfillment/:id/fulfillment-status  body: { next: 'packing' }
- * Updates fulfillmentStatus + appends fulfillmentHistory + marks timestamps
- * ✅ BLOCKS status changes if the order is not commercially 'confirmed'
+ * Keep the status endpoints as they were
  */
 router.patch("/:id/fulfillment-status", async (req, res) => {
   try {
@@ -92,7 +125,6 @@ router.patch("/:id/fulfillment-status", async (req, res) => {
     const so = await SalesOrder.findById(id);
     if (!so) return res.status(404).json({ error: "Not found" });
 
-    // ✅ Only confirmed orders can move through fulfillment
     if ((so.status || "draft") !== "confirmed") {
       return res.status(409).json({ error: "Order is not eligible for packaging (must be confirmed)" });
     }
@@ -107,7 +139,7 @@ router.patch("/:id/fulfillment-status", async (req, res) => {
     if (next === "packing")   so.packedAt   = so.packedAt   ?? now;
     if (next === "ready")     so.readyAt    = so.readyAt    ?? now;
     if (next === "shipped")   so.shippedAt  = so.shippedAt  ?? now;
-    if (next === "delivered") so.deliveredAt= so.deliveredAt?? now; // reuse existing field
+    if (next === "delivered") so.deliveredAt= so.deliveredAt?? now;
 
     await so.save();
     res.json(so);
@@ -117,11 +149,6 @@ router.patch("/:id/fulfillment-status", async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/fulfillment/:id/fulfillment  body: { fulfillmentAssignee?, fulfillmentNotes? }
- * Updates assignee/notes
- * ✅ Still allowed if confirmed; if you also want to block editing when not confirmed, add the same guard.
- */
 router.patch("/:id/fulfillment", async (req, res) => {
   try {
     const { id } = req.params;
@@ -130,7 +157,6 @@ router.patch("/:id/fulfillment", async (req, res) => {
     const so = await SalesOrder.findById(id);
     if (!so) return res.status(404).json({ error: "Not found" });
 
-    // Optional: also block changes when not confirmed
     if ((so.status || "draft") !== "confirmed") {
       return res.status(409).json({ error: "Order is not eligible for packaging (must be confirmed)" });
     }

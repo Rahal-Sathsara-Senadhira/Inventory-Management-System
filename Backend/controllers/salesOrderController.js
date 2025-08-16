@@ -357,3 +357,62 @@ export const setSalesOrderStatus = async (req, res) => {
     res.status(500).json({ error: e.message || "Failed to update status" });
   }
 };
+
+
+// ADD THIS in controllers/salesOrderController.js
+
+export const setPaymentStatus = async (req, res) => {
+  const { id } = req.params;
+  const { paymentStatus, amountPaid, paymentDate } = req.body || {};
+
+  const ALLOWED = ['unpaid','partially_paid','paid','overdue'];
+  if (paymentStatus && !ALLOWED.includes(String(paymentStatus))) {
+    return res.status(400).json({ error: `Invalid paymentStatus: ${paymentStatus}` });
+  }
+
+  try {
+    const so = await SalesOrder.findById(id);
+    if (!so) return res.status(404).json({ error: "Sales order not found" });
+
+    // update amountPaid if provided (cumulative)
+    if (amountPaid !== undefined) {
+      const nextPaid = Number(amountPaid);
+      if (!Number.isFinite(nextPaid) || nextPaid < 0) {
+        return res.status(400).json({ error: "amountPaid must be a non-negative number" });
+      }
+      so.amountPaid = nextPaid;
+    }
+
+    // derive or accept paymentStatus
+    let next = paymentStatus || so.paymentStatus || 'unpaid';
+    const grand = Number(so?.totals?.grandTotal ?? 0);
+    const paid  = Number(so?.amountPaid ?? 0);
+
+    if (!paymentStatus) {
+      if (paid <= 0) next = 'unpaid';
+      else if (paid > 0 && paid < grand) next = 'partially_paid';
+      else if (paid >= grand) next = 'paid';
+    }
+
+    // overdue if past due date and not paid
+    if (next !== 'paid' && so.paymentDueDate && new Date() > new Date(so.paymentDueDate)) {
+      next = 'overdue';
+    }
+
+    so.paymentStatus = next;
+
+    // payment date
+    if (paymentDate) {
+      const d = new Date(paymentDate);
+      if (!isNaN(d.getTime())) so.paymentDate = d;
+    } else if (next === 'paid' && !so.paymentDate) {
+      so.paymentDate = new Date();
+    }
+
+    await so.save();
+    res.json(so);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Failed to update payment status" });
+  }
+};

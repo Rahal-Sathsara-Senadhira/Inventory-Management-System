@@ -1,15 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FulfillmentAPI } from "../../../lib/api.js";
 
-/* -------------------------------------------------------------
-   Packages (Fulfillment) — Only confirmed orders are eligible
-   - Kanban board with drag & drop
-   - Table view with inline status change
-   - Search, status filter, bulk move
-   - Details side panel with timeline
-   Tailwind only.
-----------------------------------------------------------------*/
-
 const STATUSES = [
   { key: "new",       label: "New",           badge: "bg-blue-100 text-blue-700" },
   { key: "picking",   label: "Picking",       badge: "bg-violet-100 text-violet-700" },
@@ -20,7 +11,7 @@ const STATUSES = [
   { key: "cancelled", label: "Cancelled",     badge: "bg-rose-100 text-rose-700" },
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
-const COMMERCIAL_ELIGIBLE = ["confirmed"]; // 🔒 Only confirmed orders go to packaging
+const COMMERCIAL_ELIGIBLE = ["confirmed"];
 
 const fmtMoney = (n) => (isNaN(n) ? "0.00" : Number(n).toFixed(2));
 const fmtDate  = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -105,7 +96,6 @@ function PackageCard({ pkg, onOpen, onDragStart }) {
 
 function DetailsSheet({ pkg, onClose, onUpdate, onStatus }) {
   if (!pkg) return null;
-  const status = STATUS_MAP[pkg.status];
   return (
     <SideSheet open={!!pkg} onClose={onClose} title={`${pkg.id} / ${pkg.customer}`}>
       <div className="grid grid-cols-2 gap-4">
@@ -162,21 +152,50 @@ function DetailsSheet({ pkg, onClose, onUpdate, onStatus }) {
 }
 
 export default function Packages() {
-  const [view, setView] = useState("board"); // 'board' | 'table'
+  const [view, setView] = useState("board");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const [rows, setRows] = useState([]);     // {_id, id, customer, items, total, status, assignee, notes, history, updatedAt}
+  const [rows, setRows] = useState([]);
   const [openPkg, setOpenPkg] = useState(null);
 
-  // Load from API (server already filters to confirmed; we double-check here)
+  function startOfTodayMs() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  function ymd(d) {
+    const Y = d.getFullYear();
+    const M = String(d.getMonth() + 1).padStart(2, "0");
+    const D = String(d.getDate()).padStart(2, "0");
+    return `${Y}-${M}-${D}`;
+  }
+  function isWithinNext5Days(yyyy_mm_dd) {
+    if (!yyyy_mm_dd) return false;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const end = new Date(today); end.setDate(end.getDate() + 5);
+    const v = new Date(yyyy_mm_dd + "T00:00:00");
+    return v.getTime() >= today.getTime() && v.getTime() <= end.getTime();
+  }
+
+  // Load from API (server already filters; client double-checks)
   useEffect(() => {
     let alive = true;
     FulfillmentAPI
       .list({ q: "", status: "all" })
       .then(({ rows }) => {
         if (!alive) return;
-        const eligible = rows.filter(r => COMMERCIAL_ELIGIBLE.includes(r.status || "draft"));
+        const startMs = startOfTodayMs();
+        const eligible = rows
+          .filter(r => COMMERCIAL_ELIGIBLE.includes(r.status || "draft"))
+          .filter(r => isWithinNext5Days(r.expectedShipmentDate))
+          .filter(r => {
+            // Keep delivered orders only if deliveredAt is today
+            if (r.fulfillmentStatus !== "delivered") return true;
+            const deliveredAtMs = r.deliveredAt ? new Date(r.deliveredAt).getTime() : 0;
+            return deliveredAtMs >= startMs;
+          });
+
         setRows(eligible.map(r => ({
           _id: r._id,
           id: r.salesOrderNo,
@@ -186,7 +205,9 @@ export default function Packages() {
           status: r.fulfillmentStatus || "new",
           assignee: r.fulfillmentAssignee || "—",
           notes: r.fulfillmentNotes || "",
-          history: (r.fulfillmentHistory || []).map(h => ({ at: new Date(h.at).getTime(), event: h.event })),
+          history: (r.fulfillmentHistory || []).map(h => ({ at: h.at ? new Date(h.at).getTime() : null, event: h.event })),
+          expectedShipmentDate: r.expectedShipmentDate || null,
+          deliveredAt: r.deliveredAt || null,
           updatedAt: new Date(r.updatedAt).getTime(),
           createdAt: new Date(r.createdAt).getTime(),
         })));
@@ -220,7 +241,6 @@ export default function Packages() {
     return c;
   }, [rows]);
 
-  // DnD
   const onDragStart = (e, pkg) => {
     e.dataTransfer.setData("text/pkg-id", pkg.id);
     e.dataTransfer.effectAllowed = "move";
@@ -232,7 +252,6 @@ export default function Packages() {
     changeStatusByBusinessId(id, statusKey);
   };
 
-  // Change status (optimistic)
   const changeStatusByBusinessId = async (businessId, next) => {
     const row = rows.find(r => r.id === businessId);
     if (!row) return;
@@ -241,7 +260,6 @@ export default function Packages() {
   const changeStatus = async (pkg, next) => {
     const {_id} = pkg;
     const prev = pkg.status;
-    // optimistic
     setRows(curr => curr.map(r =>
       r._id === _id
         ? { ...r, status: next, updatedAt: Date.now(), history: [...(r.history||[]), { at: Date.now(), event: `${prev} → ${next}` }] }
@@ -255,21 +273,21 @@ export default function Packages() {
         assignee: saved.fulfillmentAssignee || r.assignee,
         notes: saved.fulfillmentNotes || r.notes,
         history: (saved.fulfillmentHistory || []).map(h => ({ at: new Date(h.at).getTime(), event: h.event })),
+        deliveredAt: saved.deliveredAt || r.deliveredAt,
         updatedAt: new Date(saved.updatedAt).getTime(),
       } : r));
+      // If it just became delivered, we keep it on the board today, but it will disappear after midnight by filter.
     } catch (e) {
       console.error(e);
-      // rollback
       setRows(curr => curr.map(r => r._id === _id ? { ...r, status: prev } : r));
       alert("Status change failed (order may not be confirmed)");
     }
   };
 
-  // Update from side sheet (assignee/notes)
   const updatePkg = async (nextPkg) => {
     const {_id} = nextPkg;
     const prev = rows.find(r => r._id === _id);
-    setRows(curr => curr.map(r => r._id === _id ? nextPkg : r)); // optimistic
+    setRows(curr => curr.map(r => r._id === _id ? nextPkg : r));
     try {
       const saved = await FulfillmentAPI.patch(_id, {
         fulfillmentAssignee: nextPkg.assignee,
@@ -288,7 +306,7 @@ export default function Packages() {
       } : curr);
     } catch (e) {
       console.error(e);
-      setRows(curr => curr.map(r => r._id === _id ? prev : r)); // rollback
+      setRows(curr => curr.map(r => r._id === _id ? prev : r));
       alert("Update failed (order may not be confirmed)");
     }
   };
@@ -301,7 +319,7 @@ export default function Packages() {
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-slate-800">
           <span className="text-xl">📦</span>
-          <h1 className="text-xl font-semibold">Packages</h1>
+          <h1 className="text-xl font-semibold">Packages (Next 5 Days)</h1>
         </div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-xl border p-1 bg-slate-50">
@@ -330,9 +348,9 @@ export default function Packages() {
             </div>
             <div className="md:col-span-2 flex gap-2">
               <Select value={statusFilter} onChange={setStatusFilter} className="w-48">
-                <option value="all">All statuses ({Object.values(grouped).flat().length})</option>
+                <option value="all">All statuses ({counts.all})</option>
                 {STATUSES.map((s) => (
-                  <option key={s.key} value={s.key}>{s.label}</option>
+                  <option key={s.key} value={s.key}>{s.label} ({counts[s.key] || 0})</option>
                 ))}
               </Select>
 
@@ -340,9 +358,7 @@ export default function Packages() {
               <Select className="w-56" onChange={(v) => {
                 if (!v) return;
                 const ids = new Set(filtered.map(f => f._id));
-                // optimistic
                 setRows(curr => curr.map(r => ids.has(r._id) ? { ...r, status: v, updatedAt: Date.now(), history: [...(r.history||[]), { at: Date.now(), event: `${r.status} → ${v}` }] } : r));
-                // fire per id
                 filtered.forEach(f => FulfillmentAPI.setStatus(f._id, v).catch(console.error));
               }} value="">
                 <option value="">Bulk: move visible →</option>
