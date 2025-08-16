@@ -1,98 +1,30 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { FulfillmentAPI } from "../../../lib/api.js";
 
 /* -------------------------------------------------------------
-   Simple Packages (Orders) Tracker — NO external UI libs
+   Packages (Fulfillment) — Only confirmed orders are eligible
    - Kanban board with drag & drop
    - Table view with inline status change
    - Search, status filter, bulk move
-   - Create Package modal
    - Details side panel with timeline
-   Tailwind required, but no shadcn/lucide or alias imports.
+   Tailwind only.
 ----------------------------------------------------------------*/
 
-/* Status definitions */
 const STATUSES = [
-  { key: "new", label: "New", badge: "bg-blue-100 text-blue-700" },
-  { key: "picking", label: "Picking", badge: "bg-violet-100 text-violet-700" },
-  { key: "packing", label: "Packing", badge: "bg-amber-100 text-amber-700" },
-  { key: "ready", label: "Ready to Ship", badge: "bg-teal-100 text-teal-700" },
-  { key: "shipped", label: "Shipped", badge: "bg-sky-100 text-sky-700" },
-  { key: "delivered", label: "Delivered", badge: "bg-green-100 text-green-700" },
-  { key: "cancelled", label: "Cancelled", badge: "bg-rose-100 text-rose-700" },
+  { key: "new",       label: "New",           badge: "bg-blue-100 text-blue-700" },
+  { key: "picking",   label: "Picking",       badge: "bg-violet-100 text-violet-700" },
+  { key: "packing",   label: "Packing",       badge: "bg-amber-100 text-amber-700" },
+  { key: "ready",     label: "Ready to Ship", badge: "bg-teal-100 text-teal-700" },
+  { key: "shipped",   label: "Shipped",       badge: "bg-sky-100 text-sky-700" },
+  { key: "delivered", label: "Delivered",     badge: "bg-green-100 text-green-700" },
+  { key: "cancelled", label: "Cancelled",     badge: "bg-rose-100 text-rose-700" },
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
+const COMMERCIAL_ELIGIBLE = ["confirmed"]; // 🔒 Only confirmed orders go to packaging
 
-/* Helpers */
 const fmtMoney = (n) => (isNaN(n) ? "0.00" : Number(n).toFixed(2));
-const fmtDate = (d) => new Date(d).toLocaleString();
+const fmtDate  = (d) => (d ? new Date(d).toLocaleString() : "—");
 
-/* Demo seed data; replace with your API data */
-const SEED = [
-  {
-    id: "SO-1001",
-    customer: "AquaTech Marine",
-    items: 6,
-    total: 1290.5,
-    status: "picking",
-    createdAt: Date.now() - 1000 * 60 * 60 * 5,
-    updatedAt: Date.now() - 1000 * 60 * 20,
-    assignee: "Nimal",
-    notes: "Pick from aisle B, bin 12.",
-    history: [
-      { at: Date.now() - 1000 * 60 * 60 * 5, event: "Created" },
-      { at: Date.now() - 1000 * 60 * 60 * 4.5, event: "New → Picking" },
-    ],
-  },
-  {
-    id: "SO-1002",
-    customer: "Oceanic Supplies",
-    items: 2,
-    total: 240,
-    status: "packing",
-    createdAt: Date.now() - 1000 * 60 * 60 * 10,
-    updatedAt: Date.now() - 1000 * 60 * 40,
-    assignee: "Vishwa",
-    notes: "Fragile. Bubble wrap.",
-    history: [
-      { at: Date.now() - 1000 * 60 * 60 * 10, event: "Created" },
-      { at: Date.now() - 1000 * 60 * 60 * 9.5, event: "New → Picking" },
-      { at: Date.now() - 1000 * 60 * 60 * 2, event: "Picking → Packing" },
-    ],
-  },
-  {
-    id: "SO-1003",
-    customer: "Harbor Tools",
-    items: 4,
-    total: 520.75,
-    status: "ready",
-    createdAt: Date.now() - 1000 * 60 * 60 * 24,
-    updatedAt: Date.now() - 1000 * 60 * 10,
-    assignee: "Sithara",
-    notes: "Await courier pickup.",
-    history: [
-      { at: Date.now() - 1000 * 60 * 60 * 24, event: "Created" },
-      { at: Date.now() - 1000 * 60 * 60 * 20, event: "New → Picking" },
-      { at: Date.now() - 1000 * 60 * 60 * 12, event: "Picking → Packing" },
-      { at: Date.now() - 1000 * 60 * 60 * 1, event: "Packing → Ready" },
-    ],
-  },
-  {
-    id: "SO-1004",
-    customer: "WaveWorks",
-    items: 1,
-    total: 99.99,
-    status: "new",
-    createdAt: Date.now() - 1000 * 60 * 30,
-    updatedAt: Date.now() - 1000 * 60 * 30,
-    assignee: "—",
-    notes: "",
-    history: [{ at: Date.now() - 1000 * 60 * 30, event: "Created" }],
-  },
-];
-
-/* -------------------------------------------------------------
-   Small dumb UI atoms
-----------------------------------------------------------------*/
 const Badge = ({ className = "", children }) => (
   <span className={"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium " + className}>{children}</span>
 );
@@ -107,14 +39,12 @@ const Button = ({ variant = "solid", className = "", ...props }) => {
       : "bg-slate-900 text-white hover:bg-slate-800";
   return <button className={`${base} ${styles} ${className}`} {...props} />;
 };
-
 const Input = (props) => (
   <input
     {...props}
     className={(props.className || "") + " w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300"}
   />
 );
-
 const Select = ({ value, onChange, children, className = "" }) => (
   <select
     value={value}
@@ -125,39 +55,13 @@ const Select = ({ value, onChange, children, className = "" }) => (
   </select>
 );
 
-/* -------------------------------------------------------------
-   Cards & Modals (pure Tailwind)
-----------------------------------------------------------------*/
 const Card = ({ className = "", children, ...rest }) => (
-  <div className={"rounded-2xl border bg-white shadow-sm " + className} {...rest}>
-    {children}
-  </div>
+  <div className={"rounded-2xl border bg-white shadow-sm " + className} {...rest}>{children}</div>
 );
-const CardHeader = ({ className = "", children }) => (
-  <div className={"border-b px-4 py-3 " + className}>{children}</div>
-);
-const CardTitle = ({ children }) => <div className="text-sm font-semibold">{children}</div>;
-const CardContent = ({ className = "", children }) => <div className={"p-4 " + className}>{children}</div>;
+const CardHeader = ({ className = "", children }) => <div className={"border-b px-4 py-3 " + className}>{children}</div>;
+const CardTitle  = ({ children }) => <div className="text-sm font-semibold">{children}</div>;
+const CardContent= ({ className = "", children }) => <div className={"p-4 " + className}>{children}</div>;
 
-/* Simple modal */
-function Modal({ open, onClose, title, children, footer }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative z-10 w-[92vw] max-w-xl rounded-2xl border bg-white shadow-lg">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <div className="font-semibold">{title}</div>
-          <button className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" onClick={onClose}>✕</button>
-        </div>
-        <div className="p-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t px-4 py-3">{footer}</div>}
-      </div>
-    </div>
-  );
-}
-
-/* Side sheet */
 function SideSheet({ open, onClose, children, title }) {
   return (
     <div className={`fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`}>
@@ -173,9 +77,6 @@ function SideSheet({ open, onClose, children, title }) {
   );
 }
 
-/* -------------------------------------------------------------
-   Package Card (for board)
-----------------------------------------------------------------*/
 function PackageCard({ pkg, onOpen, onDragStart }) {
   const status = STATUS_MAP[pkg.status] || { badge: "" };
   return (
@@ -183,7 +84,7 @@ function PackageCard({ pkg, onOpen, onDragStart }) {
       draggable
       onDragStart={(e) => onDragStart(e, pkg)}
       onDoubleClick={() => onOpen(pkg)}
-      className="min-w-0 group rounded-2xl border bg-white shadow-sm hover:shadow-md transition p-3 cursor-grab active:cursor-grabbing"
+      className="group rounded-2xl border bg-white shadow-sm hover:shadow-md transition p-3 cursor-grab active:cursor-grabbing min-w-0"
     >
       <div className="flex items-center justify-between">
         <div className="font-medium">{pkg.id}</div>
@@ -202,83 +103,11 @@ function PackageCard({ pkg, onOpen, onDragStart }) {
   );
 }
 
-/* -------------------------------------------------------------
-   Create Package Modal
-----------------------------------------------------------------*/
-function CreatePackageModal({ open, setOpen, onCreate }) {
-  const [form, setForm] = useState({ id: "", customer: "", total: "", items: 1, status: "new", assignee: "", notes: "" });
-  const submit = () => {
-    if (!form.id || !form.customer) return alert("Order ID and Customer are required");
-    const now = Date.now();
-    onCreate({
-      ...form,
-      total: Number(form.total || 0),
-      createdAt: now,
-      updatedAt: now,
-      history: [
-        { at: now, event: "Created" },
-        { at: now, event: `Status: ${STATUS_MAP[form.status].label}` },
-      ],
-    });
-    setOpen(false);
-    setForm({ id: "", customer: "", total: "", items: 1, status: "new", assignee: "", notes: "" });
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => setOpen(false)}
-      title="Create Package"
-      footer={<>
-        <Button onClick={submit}>Create</Button>
-      </>}
-    >
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <div className="text-xs mb-1">Order ID</div>
-          <Input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder="SO-1005" />
-        </div>
-        <div>
-          <div className="text-xs mb-1">Customer</div>
-          <Input value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} placeholder="Customer name" />
-        </div>
-        <div>
-          <div className="text-xs mb-1">Total (USD)</div>
-          <Input type="number" value={form.total} onChange={(e) => setForm({ ...form, total: e.target.value })} />
-        </div>
-        <div>
-          <div className="text-xs mb-1">Items</div>
-          <Input type="number" min={1} value={form.items} onChange={(e) => setForm({ ...form, items: Number(e.target.value || 1) })} />
-        </div>
-        <div className="sm:col-span-2">
-          <div className="text-xs mb-1">Status</div>
-          <Select value={form.status} onChange={(v) => setForm({ ...form, status: v })}>
-            {STATUSES.map((s) => (
-              <option key={s.key} value={s.key}>{s.label}</option>
-            ))}
-          </Select>
-        </div>
-        <div className="sm:col-span-2">
-          <div className="text-xs mb-1">Assignee</div>
-          <Input value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} placeholder="Who is handling it?" />
-        </div>
-        <div className="sm:col-span-2">
-          <div className="text-xs mb-1">Notes</div>
-          <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" />
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/* -------------------------------------------------------------
-   Details Side Sheet
-----------------------------------------------------------------*/
-function DetailsSheet({ pkg, onClose, onUpdate }) {
+function DetailsSheet({ pkg, onClose, onUpdate, onStatus }) {
   if (!pkg) return null;
   const status = STATUS_MAP[pkg.status];
   return (
-    <SideSheet open={!!pkg} onClose={onClose} title={`${pkg.id} / ${pkg.customer}`}>      
+    <SideSheet open={!!pkg} onClose={onClose} title={`${pkg.id} / ${pkg.customer}`}>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="text-xs text-slate-500">Assignee</div>
@@ -299,8 +128,8 @@ function DetailsSheet({ pkg, onClose, onUpdate }) {
       </div>
 
       <div className="mt-4">
-        <div className="text-xs text-slate-500 mb-2">Status</div>
-        <Select value={pkg.status} onChange={(v) => onUpdate({ ...pkg, status: v, updatedAt: Date.now(), history: [...(pkg.history||[]), { at: Date.now(), event: `${status?.label || pkg.status} → ${STATUS_MAP[v]?.label || v}` }] })}>
+        <div className="text-xs text-slate-500 mb-2">Move to status</div>
+        <Select value={pkg.status} onChange={(v) => onStatus(pkg, v)}>
           {STATUSES.map((s) => (
             <option key={s.key} value={s.key}>{s.label}</option>
           ))}
@@ -309,13 +138,15 @@ function DetailsSheet({ pkg, onClose, onUpdate }) {
 
       <div className="mt-4">
         <div className="text-xs text-slate-500 mb-2">Notes</div>
-        <div className="rounded-xl border bg-slate-50 p-3 text-sm min-h-16 whitespace-pre-wrap">{pkg.notes || "No notes."}</div>
+        <div className="rounded-xl border bg-slate-50 p-3 text-sm min-h-16 whitespace-pre-wrap">
+          {pkg.notes || "No notes."}
+        </div>
       </div>
 
       <div className="mt-6">
         <div className="text-xs text-slate-500 mb-2">Timeline</div>
         <div className="space-y-2">
-          {pkg.history?.slice().sort((a,b)=>b.at-a.at).map((h, i) => (
+          {(pkg.history || []).slice().sort((a,b)=>b.at - a.at).map((h, i) => (
             <div key={i} className="flex items-start gap-3">
               <div className="h-2 w-2 rounded-full bg-slate-400 mt-2" />
               <div>
@@ -330,21 +161,48 @@ function DetailsSheet({ pkg, onClose, onUpdate }) {
   );
 }
 
-/* -------------------------------------------------------------
-   Main Component
-----------------------------------------------------------------*/
 export default function Packages() {
   const [view, setView] = useState("board"); // 'board' | 'table'
   const [query, setQuery] = useState("");
-  const [rows, setRows] = useState(SEED);
-  const [openPkg, setOpenPkg] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [showCreate, setShowCreate] = useState(false);
+
+  const [rows, setRows] = useState([]);     // {_id, id, customer, items, total, status, assignee, notes, history, updatedAt}
+  const [openPkg, setOpenPkg] = useState(null);
+
+  // Load from API (server already filters to confirmed; we double-check here)
+  useEffect(() => {
+    let alive = true;
+    FulfillmentAPI
+      .list({ q: "", status: "all" })
+      .then(({ rows }) => {
+        if (!alive) return;
+        const eligible = rows.filter(r => COMMERCIAL_ELIGIBLE.includes(r.status || "draft"));
+        setRows(eligible.map(r => ({
+          _id: r._id,
+          id: r.salesOrderNo,
+          customer: r.customerName || "—",
+          items: r.itemsCount || 0,
+          total: r.total ?? 0,
+          status: r.fulfillmentStatus || "new",
+          assignee: r.fulfillmentAssignee || "—",
+          notes: r.fulfillmentNotes || "",
+          history: (r.fulfillmentHistory || []).map(h => ({ at: new Date(h.at).getTime(), event: h.event })),
+          updatedAt: new Date(r.updatedAt).getTime(),
+          createdAt: new Date(r.createdAt).getTime(),
+        })));
+      })
+      .catch(console.error);
+    return () => { alive = false; };
+  }, []);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       const q = query.toLowerCase();
-      const matchesQ = !q || r.id.toLowerCase().includes(q) || r.customer.toLowerCase().includes(q) || (r.assignee||"").toLowerCase().includes(q);
+      const matchesQ =
+        !q ||
+        r.id.toLowerCase().includes(q) ||
+        r.customer.toLowerCase().includes(q) ||
+        (r.assignee || "").toLowerCase().includes(q);
       const matchesS = statusFilter === "all" || r.status === statusFilter;
       return matchesQ && matchesS;
     });
@@ -356,34 +214,86 @@ export default function Packages() {
     return m;
   }, [filtered]);
 
-  const changeStatus = (id, next) => {
-    setRows((curr) => curr.map((r) => r.id === id ? { ...r, status: next, updatedAt: Date.now(), history: [...(r.history||[]), { at: Date.now(), event: `${STATUS_MAP[r.status]?.label || r.status} → ${STATUS_MAP[next]?.label || next}` }] } : r));
-  };
+  const counts = useMemo(() => {
+    const c = Object.fromEntries(["all", ...STATUSES.map((s) => s.key)].map((k) => [k, 0]));
+    for (const r of rows) { c.all++; c[r.status] = (c[r.status] || 0) + 1; }
+    return c;
+  }, [rows]);
 
-  const onDropTo = (statusKey, e) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData("text/pkg-id");
-    if (!id) return;
-    changeStatus(id, statusKey);
-  };
-
+  // DnD
   const onDragStart = (e, pkg) => {
     e.dataTransfer.setData("text/pkg-id", pkg.id);
     e.dataTransfer.effectAllowed = "move";
   };
+  const onDropTo = (statusKey, e) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("text/pkg-id");
+    if (!id) return;
+    changeStatusByBusinessId(id, statusKey);
+  };
+
+  // Change status (optimistic)
+  const changeStatusByBusinessId = async (businessId, next) => {
+    const row = rows.find(r => r.id === businessId);
+    if (!row) return;
+    await changeStatus(row, next);
+  };
+  const changeStatus = async (pkg, next) => {
+    const {_id} = pkg;
+    const prev = pkg.status;
+    // optimistic
+    setRows(curr => curr.map(r =>
+      r._id === _id
+        ? { ...r, status: next, updatedAt: Date.now(), history: [...(r.history||[]), { at: Date.now(), event: `${prev} → ${next}` }] }
+        : r
+    ));
+    try {
+      const saved = await FulfillmentAPI.setStatus(_id, next);
+      setRows(curr => curr.map(r => r._id === _id ? {
+        ...r,
+        status: saved.fulfillmentStatus,
+        assignee: saved.fulfillmentAssignee || r.assignee,
+        notes: saved.fulfillmentNotes || r.notes,
+        history: (saved.fulfillmentHistory || []).map(h => ({ at: new Date(h.at).getTime(), event: h.event })),
+        updatedAt: new Date(saved.updatedAt).getTime(),
+      } : r));
+    } catch (e) {
+      console.error(e);
+      // rollback
+      setRows(curr => curr.map(r => r._id === _id ? { ...r, status: prev } : r));
+      alert("Status change failed (order may not be confirmed)");
+    }
+  };
+
+  // Update from side sheet (assignee/notes)
+  const updatePkg = async (nextPkg) => {
+    const {_id} = nextPkg;
+    const prev = rows.find(r => r._id === _id);
+    setRows(curr => curr.map(r => r._id === _id ? nextPkg : r)); // optimistic
+    try {
+      const saved = await FulfillmentAPI.patch(_id, {
+        fulfillmentAssignee: nextPkg.assignee,
+        fulfillmentNotes: nextPkg.notes,
+      });
+      setRows(curr => curr.map(r => r._id === _id ? {
+        ...r,
+        assignee: saved.fulfillmentAssignee || "",
+        notes: saved.fulfillmentNotes || "",
+        updatedAt: new Date(saved.updatedAt).getTime(),
+      } : r));
+      setOpenPkg(curr => curr && curr._id === _id ? {
+        ...curr,
+        assignee: saved.fulfillmentAssignee || "",
+        notes: saved.fulfillmentNotes || "",
+      } : curr);
+    } catch (e) {
+      console.error(e);
+      setRows(curr => curr.map(r => r._id === _id ? prev : r)); // rollback
+      alert("Update failed (order may not be confirmed)");
+    }
+  };
 
   const openDetails = (pkg) => setOpenPkg(pkg);
-  const updatePkg = (nextPkg) => {
-    setRows((curr) => curr.map((r) => (r.id === nextPkg.id ? nextPkg : r)));
-    setOpenPkg(nextPkg);
-  };
-  const createPkg = (pkg) => setRows((curr) => [pkg, ...curr]);
-
-  const counts = useMemo(() => {
-    const c = Object.fromEntries(["all", ...STATUSES.map((s) => s.key)].map((k) => [k, 0]));
-    for (const r of rows) { c.all++; c[r.status] = (c[r.status]||0) + 1; }
-    return c;
-  }, [rows]);
 
   return (
     <div className="p-4 sm:p-6 space-y-4 overflow-x-hidden">
@@ -402,7 +312,6 @@ export default function Packages() {
               Table
             </button>
           </div>
-          <Button onClick={() => setShowCreate(true)}>＋ New Package</Button>
         </div>
       </div>
 
@@ -421,16 +330,20 @@ export default function Packages() {
             </div>
             <div className="md:col-span-2 flex gap-2">
               <Select value={statusFilter} onChange={setStatusFilter} className="w-48">
-                <option value="all">All statuses ({counts.all})</option>
+                <option value="all">All statuses ({Object.values(grouped).flat().length})</option>
                 {STATUSES.map((s) => (
-                  <option key={s.key} value={s.key}>{s.label} ({counts[s.key] || 0})</option>
+                  <option key={s.key} value={s.key}>{s.label}</option>
                 ))}
               </Select>
 
-              {/* Simple bulk move: choose status and apply to filtered */}
+              {/* Bulk move: apply to currently filtered rows */}
               <Select className="w-56" onChange={(v) => {
                 if (!v) return;
-                setRows((curr) => curr.map((r) => (filtered.some((f) => f.id === r.id) ? { ...r, status: v } : r)));
+                const ids = new Set(filtered.map(f => f._id));
+                // optimistic
+                setRows(curr => curr.map(r => ids.has(r._id) ? { ...r, status: v, updatedAt: Date.now(), history: [...(r.history||[]), { at: Date.now(), event: `${r.status} → ${v}` }] } : r));
+                // fire per id
+                filtered.forEach(f => FulfillmentAPI.setStatus(f._id, v).catch(console.error));
               }} value="">
                 <option value="">Bulk: move visible →</option>
                 {STATUSES.map((s) => (
@@ -454,7 +367,7 @@ export default function Packages() {
               <CardContent>
                 <div className="h-[56vh] overflow-y-auto overflow-x-hidden pr-1 space-y-3 min-w-0">
                   {(grouped[s.key] || []).map((pkg) => (
-                    <PackageCard key={pkg.id} pkg={pkg} onOpen={openDetails} onDragStart={onDragStart} />
+                    <PackageCard key={pkg._id} pkg={pkg} onOpen={openDetails} onDragStart={onDragStart} />
                   ))}
                 </div>
               </CardContent>
@@ -483,14 +396,14 @@ export default function Packages() {
                 </thead>
                 <tbody>
                   {filtered.map((r) => (
-                    <tr key={r.id} className="border-t">
+                    <tr key={r._id} className="border-t">
                       <td className="px-4 py-2 font-medium">{r.id}</td>
                       <td className="px-4 py-2">{r.customer}</td>
                       <td className="px-4 py-2">{r.items}</td>
                       <td className="px-4 py-2">${fmtMoney(r.total)}</td>
                       <td className="px-4 py-2">{r.assignee || "—"}</td>
                       <td className="px-4 py-2">
-                        <Select value={r.status} onChange={(v) => changeStatus(r.id, v)} className="w-48">
+                        <Select value={r.status} onChange={(v) => changeStatus(r, v)} className="w-48">
                           {STATUSES.map((s) => (
                             <option key={s.key} value={s.key}>{s.label}</option>
                           ))}
@@ -509,9 +422,12 @@ export default function Packages() {
         </Card>
       )}
 
-      {/* Modals / Sheets */}
-      <CreatePackageModal open={showCreate} setOpen={setShowCreate} onCreate={createPkg} />
-      <DetailsSheet pkg={openPkg} onClose={() => setOpenPkg(null)} onUpdate={updatePkg} />
+      <DetailsSheet
+        pkg={openPkg}
+        onClose={() => setOpenPkg(null)}
+        onUpdate={(next) => updatePkg(next)}
+        onStatus={(pkg, next) => changeStatus(pkg, next)}
+      />
     </div>
   );
 }

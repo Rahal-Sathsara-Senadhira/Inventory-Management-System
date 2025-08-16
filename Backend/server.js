@@ -16,6 +16,7 @@ import { salespersonsRouter } from "./routes/salesPersons.js";
 import itemsRouter from "./routes/items.js";
 import priceListsRouter from "./routes/priceLists.js";
 import taxesRouter from "./routes/taxes.js";
+import fulfillmentRouter from "./routes/fulfillment.js";
 
 const PORT = process.env.PORT || 5000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
@@ -65,6 +66,7 @@ app.use("/api/salespersons", salespersonsRouter);
 app.use("/api/items", itemsRouter);
 app.use("/api/price-lists", priceListsRouter);
 app.use("/api/taxes", taxesRouter);
+app.use("/api/fulfillment", fulfillmentRouter);
 
 // Health
 app.get("/health", (_req, res) => {
