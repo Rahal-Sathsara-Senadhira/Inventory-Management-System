@@ -1,107 +1,147 @@
 // models/salesOrder.js
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-const SalesOrderItemSchema = new mongoose.Schema({
-  itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Item' },
-  freeText: String,
-  quantity: { type: Number, default: 1 },
-  rate: { type: Number, default: 0 },
-  discount: { type: Number, default: 0 }, // percent
-  taxId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tax' }
-}, { _id: false });
-
-const TotalsSchema = new mongoose.Schema({
-  subTotal: Number,
-  taxTotal: Number,
-  shippingCharge: Number,
-  adjustment: Number,
-  roundOff: Number,
-  grandTotal: Number,
-  currency: { type: String, default: 'USD' }
-}, { _id: false });
-
-const FileMetaSchema = new mongoose.Schema({
-  name: String,
-  size: Number,
-  type: String,
-  url: String,        // Cloudinary secure_url
-  publicId: String,   // Cloudinary public_id (optional, for deletes)
-}, { _id: false });
-
-const SalesOrderSchema = new mongoose.Schema({
-  uid: {
-    type: String,
-    unique: true,
-    default: () => new mongoose.Types.ObjectId().toString()
+const LineSchema = new mongoose.Schema(
+  {
+    itemId: { type: mongoose.Schema.Types.ObjectId, ref: "Item" },
+    freeText: { type: String, default: "" },
+    quantity: { type: Number, default: 1 },
+    rate: { type: Number, default: 0 },
+    discount: { type: Number, default: 0 }, // %
+    taxId: { type: mongoose.Schema.Types.ObjectId, ref: "Tax" },
   },
+  { _id: false }
+);
 
-  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
-  salesOrderNo: { type: String, required: true, unique: true, index: true },
-  referenceNo: String,
-  salesOrderDate: { type: String, required: true },   // yyyy-mm-dd
-  expectedShipmentDate: String,
-  paymentTerm: String,
-  deliveryMethod: String,
-  salespersonId: String,
-  priceListId: String,
-
-  items: [SalesOrderItemSchema],
-  totals: TotalsSchema,
-
-  shippingTaxId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tax' },
-  shippingCharge: { type: Number, default: 0 },
-  adjustment: { type: Number, default: 0 },
-  roundOff: { type: Number, default: 0 },
-
-  // Commercial lifecycle
-  status: {
-    type: String,
-    enum: ['draft', 'confirmed', 'delivered', 'cancelled'],
-    default: 'draft',
-    index: true
+const TotalsSchema = new mongoose.Schema(
+  {
+    subTotal: { type: Number, default: 0 },
+    taxTotal: { type: Number, default: 0 },
+    shippingCharge: { type: Number, default: 0 },
+    adjustment: { type: Number, default: 0 },
+    roundOff: { type: Number, default: 0 },
+    grandTotal: { type: Number, default: 0 },
+    currency: { type: String, default: "USD" },
   },
-  confirmedAt: Date,
-  deliveredAt: Date,
-  cancelledAt: Date,
+  { _id: false }
+);
 
-  // Warehouse fulfillment workflow
-  fulfillmentStatus: {
+const FileMetaSchema = new mongoose.Schema(
+  {
+    name: String,
+    size: Number,
     type: String,
-    enum: ['new','picking','packing','ready','shipped','delivered','cancelled'],
-    default: 'new',
-    index: true
+    url: String,
+    publicId: String,
   },
-  fulfillmentAssignee: String,
-  fulfillmentNotes: String,
-  fulfillmentHistory: [{
-    at: { type: Date, default: Date.now },
-    event: String,
-  }],
-  pickedAt: Date,
-  packedAt: Date,
-  readyAt: Date,
-  shippedAt: Date,
-  // deliveredAt reused above for fulfillment final
+  { _id: false }
+);
 
-  // 💳 Payments (NEW)
-  paymentStatus: {
-    type: String,
-    enum: ['unpaid', 'partially_paid', 'paid', 'overdue'],
-    default: 'unpaid',
-    index: true
+const PaymentSchema = new mongoose.Schema(
+  {
+    amount: { type: Number, required: true, min: 0 },
+    method: {
+      type: String,
+      enum: ["cash", "card", "bank", "cheque", "other"],
+      default: "cash",
+    },
+    reference: { type: String, default: "" },
+    date: { type: Date, default: Date.now },
+    note: { type: String, default: "" },
   },
-  paymentDueDate: Date,   // set when invoice is issued
-  paymentDate: Date,      // set when fully paid
-  amountPaid: { type: Number, default: 0 }, // cumulative paid amount
+  { timestamps: true }
+);
 
-  notes: String,
-  terms: String,
+// Small helper: generate a stable, unique business uid
+const genUid = () => `so_${new mongoose.Types.ObjectId().toString()}`;
 
-  filesMeta: [FileMetaSchema]
-}, { timestamps: true });
+const SalesOrderSchema = new mongoose.Schema(
+  {
+    // identity
+    uid: {
+      type: String,
+      unique: true,
+      index: true,
+      default: genUid,     // <-- NEW: always non-null, unique
+    },
+    salesOrderNo: { type: String, required: true, index: true, unique: true },
+    referenceNo: { type: String, default: "" },
 
-SalesOrderSchema.index({ salesOrderNo: 1 }, { unique: true });
-SalesOrderSchema.index({ fulfillmentStatus: 1 });
-SalesOrderSchema.index({ customerId: 1 });
+    // relations
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", index: true },
+    salespersonId: { type: String, default: "" },
+    priceListId: { type: String, default: "" },
 
-export default mongoose.model('SalesOrder', SalesOrderSchema);
+    // dates
+    salesOrderDate: { type: Date },
+    expectedShipmentDate: { type: Date },
+
+    // terms / shipping
+    paymentTerm: { type: String, default: "" },
+    deliveryMethod: { type: String, default: "" },
+    shippingCharge: { type: Number, default: 0 },
+    shippingTaxId: { type: mongoose.Schema.Types.ObjectId, ref: "Tax" },
+
+    // items + totals
+    items: { type: [LineSchema], default: [] },
+    totals: { type: TotalsSchema, default: undefined },
+
+    // adjustments
+    adjustment: { type: Number, default: 0 },
+    roundOff: { type: Number, default: 0 },
+
+    // notes/files
+    notes: { type: String, default: "" },
+    terms: { type: String, default: "" },
+    filesMeta: { type: [FileMetaSchema], default: [] },
+
+    // order status
+    status: {
+      type: String,
+      enum: ["draft", "confirmed", "delivered", "cancelled", "paid"],
+      default: "draft",
+      index: true,
+    },
+    confirmedAt: Date,
+    deliveredAt: Date,
+    cancelledAt: Date,
+    paidAt: Date,
+
+    // payment tracking
+    payments: { type: [PaymentSchema], default: [] },
+    amountPaid: { type: Number, default: 0 },
+    paymentStatus: {
+      type: String,
+      enum: ["unpaid", "partially_paid", "paid", "overdue"],
+      default: "unpaid",
+      index: true,
+    },
+    paymentDate: { type: Date },
+    paymentDueDate: { type: Date },
+  },
+  { timestamps: true }
+);
+
+// helper to recompute paid amounts & status
+SalesOrderSchema.methods.recomputePayments = function () {
+  const paid = (this.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+  const grand = Number(this?.totals?.grandTotal ?? 0);
+  this.amountPaid = Number.isFinite(paid) ? paid : 0;
+
+  let next = "unpaid";
+  if (paid >= grand && grand > 0) next = "paid";
+  else if (paid > 0 && paid < grand) next = "partially_paid";
+  else next = "unpaid";
+
+  if (next !== "paid" && this.paymentDueDate && new Date() > new Date(this.paymentDueDate)) {
+    next = "overdue";
+  }
+  this.paymentStatus = next;
+
+  if (next === "paid") {
+    this.paidAt = this.paidAt || new Date();
+    this.paymentDate = this.paymentDate || new Date();
+  }
+};
+
+export default mongoose.model("SalesOrder", SalesOrderSchema);

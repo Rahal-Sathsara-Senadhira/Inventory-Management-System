@@ -1,3 +1,4 @@
+// Packages.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { FulfillmentAPI } from "../../../lib/api.js";
 
@@ -12,6 +13,8 @@ const STATUSES = [
 ];
 const STATUS_MAP = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
 const COMMERCIAL_ELIGIBLE = ["confirmed"];
+
+const API_BASE = import.meta.env?.VITE_API_BASE || "";
 
 const fmtMoney = (n) => (isNaN(n) ? "0.00" : Number(n).toFixed(2));
 const fmtDate  = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -151,6 +154,30 @@ function DetailsSheet({ pkg, onClose, onUpdate, onStatus }) {
   );
 }
 
+/** ---- date helpers tolerant to Date or string ---- */
+function normalizeDateishToMidnight(dateish) {
+  if (!dateish) return null;
+  // If Mongoose Date comes as ISO string or Date, both are OK with new Date()
+  // If you stored "yyyy-mm-dd", append T00:00:00 for consistent parse.
+  if (typeof dateish === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateish)) {
+    return new Date(dateish + "T00:00:00");
+  }
+  const d = new Date(dateish);
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0,0,0,0);
+  return d;
+}
+function startOfTodayMs() {
+  const d = new Date(); d.setHours(0,0,0,0); return d.getTime();
+}
+function isWithinNextNDays(dateish, N = 5) {
+  const v = normalizeDateishToMidnight(dateish);
+  if (!v) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const end = new Date(today); end.setDate(end.getDate() + N);
+  return v.getTime() >= today.getTime() && v.getTime() <= end.getTime();
+}
+
 export default function Packages() {
   const [view, setView] = useState("board");
   const [query, setQuery] = useState("");
@@ -159,38 +186,23 @@ export default function Packages() {
   const [rows, setRows] = useState([]);
   const [openPkg, setOpenPkg] = useState(null);
 
-  function startOfTodayMs() {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }
-  function ymd(d) {
-    const Y = d.getFullYear();
-    const M = String(d.getMonth() + 1).padStart(2, "0");
-    const D = String(d.getDate()).padStart(2, "0");
-    return `${Y}-${M}-${D}`;
-  }
-  function isWithinNext5Days(yyyy_mm_dd) {
-    if (!yyyy_mm_dd) return false;
-    const today = new Date(); today.setHours(0,0,0,0);
-    const end = new Date(today); end.setDate(end.getDate() + 5);
-    const v = new Date(yyyy_mm_dd + "T00:00:00");
-    return v.getTime() >= today.getTime() && v.getTime() <= end.getTime();
-  }
-
-  // Load from API (server already filters; client double-checks)
+  // Load from the new, safe endpoint (server pre-filters)
   useEffect(() => {
     let alive = true;
-    FulfillmentAPI
-      .list({ q: "", status: "all" })
-      .then(({ rows }) => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/fulfillment-packages?status=all&days=5`);
+        const { rows: apiRows = [] } = await res.json();
+
         if (!alive) return;
+
         const startMs = startOfTodayMs();
-        const eligible = rows
+
+        const eligible = (apiRows || [])
           .filter(r => COMMERCIAL_ELIGIBLE.includes(r.status || "draft"))
-          .filter(r => isWithinNext5Days(r.expectedShipmentDate))
+          .filter(r => isWithinNextNDays(r.expectedShipmentDate, 5))
           .filter(r => {
-            // Keep delivered orders only if deliveredAt is today
+            // Keep delivered orders only if delivered today
             if (r.fulfillmentStatus !== "delivered") return true;
             const deliveredAtMs = r.deliveredAt ? new Date(r.deliveredAt).getTime() : 0;
             return deliveredAtMs >= startMs;
@@ -211,8 +223,11 @@ export default function Packages() {
           updatedAt: new Date(r.updatedAt).getTime(),
           createdAt: new Date(r.createdAt).getTime(),
         })));
-      })
-      .catch(console.error);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    load();
     return () => { alive = false; };
   }, []);
 
@@ -257,26 +272,31 @@ export default function Packages() {
     if (!row) return;
     await changeStatus(row, next);
   };
+
   const changeStatus = async (pkg, next) => {
     const {_id} = pkg;
     const prev = pkg.status;
+
+    // optimistic
     setRows(curr => curr.map(r =>
       r._id === _id
         ? { ...r, status: next, updatedAt: Date.now(), history: [...(r.history||[]), { at: Date.now(), event: `${prev} → ${next}` }] }
         : r
     ));
+
     try {
       const saved = await FulfillmentAPI.setStatus(_id, next);
+
       setRows(curr => curr.map(r => r._id === _id ? {
         ...r,
-        status: saved.fulfillmentStatus,
-        assignee: saved.fulfillmentAssignee || r.assignee,
-        notes: saved.fulfillmentNotes || r.notes,
-        history: (saved.fulfillmentHistory || []).map(h => ({ at: new Date(h.at).getTime(), event: h.event })),
-        deliveredAt: saved.deliveredAt || r.deliveredAt,
-        updatedAt: new Date(saved.updatedAt).getTime(),
+        status: (saved && saved.fulfillmentStatus) ? saved.fulfillmentStatus : (next || prev),
+        assignee: saved?.fulfillmentAssignee ?? r.assignee,
+        notes: saved?.fulfillmentNotes ?? r.notes,
+        history: (saved?.fulfillmentHistory || []).map(h => ({ at: new Date(h.at).getTime(), event: h.event })),
+        deliveredAt: saved?.deliveredAt ?? r.deliveredAt,
+        updatedAt: saved?.updatedAt ? new Date(saved.updatedAt).getTime() : Date.now(),
       } : r));
-      // If it just became delivered, we keep it on the board today, but it will disappear after midnight by filter.
+      // If it just became delivered, it will remain today and drop off after midnight by the filter.
     } catch (e) {
       console.error(e);
       setRows(curr => curr.map(r => r._id === _id ? { ...r, status: prev } : r));
@@ -295,14 +315,14 @@ export default function Packages() {
       });
       setRows(curr => curr.map(r => r._id === _id ? {
         ...r,
-        assignee: saved.fulfillmentAssignee || "",
-        notes: saved.fulfillmentNotes || "",
-        updatedAt: new Date(saved.updatedAt).getTime(),
+        assignee: saved?.fulfillmentAssignee ?? "",
+        notes: saved?.fulfillmentNotes ?? "",
+        updatedAt: saved?.updatedAt ? new Date(saved.updatedAt).getTime() : Date.now(),
       } : r));
       setOpenPkg(curr => curr && curr._id === _id ? {
         ...curr,
-        assignee: saved.fulfillmentAssignee || "",
-        notes: saved.fulfillmentNotes || "",
+        assignee: saved?.fulfillmentAssignee ?? "",
+        notes: saved?.fulfillmentNotes ?? "",
       } : curr);
     } catch (e) {
       console.error(e);

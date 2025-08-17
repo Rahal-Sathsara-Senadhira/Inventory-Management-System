@@ -1,4 +1,4 @@
-// server.js (only the relevant differences shown)
+// server.js
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -18,6 +18,7 @@ import priceListsRouter from "./routes/priceLists.js";
 import taxesRouter from "./routes/taxes.js";
 import fulfillmentRouter from "./routes/fulfillment.js";
 import reportsRouter from "./routes/reports.js";
+import fulfillmentPackagesRouter from "./routes/fulfillmentPackages.js";
 
 const PORT = process.env.PORT || 5000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
@@ -43,21 +44,23 @@ const allowed = (FRONTEND_ORIGIN || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
-    return cb(new Error("Not allowed by CORS"));
-  },
-  credentials: true,
-  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"]
-}));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin || allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 // Rate limit example
 const searchLimiter = rateLimit({ windowMs: 60_000, max: 120 });
 app.use("/api/items/search", searchLimiter);
 
-// (Optional) keep legacy local uploads serving, if you already stored files there
+// (Optional) local uploads
 // app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), { maxAge: "1d", etag: true }));
 
 // Routes
@@ -67,7 +70,13 @@ app.use("/api/salespersons", salespersonsRouter);
 app.use("/api/items", itemsRouter);
 app.use("/api/price-lists", priceListsRouter);
 app.use("/api/taxes", taxesRouter);
+
+// ✅ Packages board (new)
+app.use("/api/fulfillment-packages", fulfillmentPackagesRouter);
+
+// Legacy fulfillment endpoints kept for other screens
 app.use("/api/fulfillment", fulfillmentRouter);
+
 app.use("/api/reports", reportsRouter);
 
 // Health
@@ -110,7 +119,7 @@ const shutdown = async (signal) => {
     process.exit(1);
   }
 };
-["SIGINT","SIGTERM"].forEach((sig) => process.on(sig, () => shutdown(sig)));
+["SIGINT", "SIGTERM"].forEach((sig) => process.on(sig, () => shutdown(sig)));
 
 process.on("unhandledRejection", (e) => console.error("Unhandled Rejection:", e));
 process.on("uncaughtException", (e) => console.error("Uncaught Exception:", e));

@@ -55,7 +55,12 @@ const deepScrub = (val) => {
 };
 
 const escapeRegExp = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const getTenant = (req) => req.user?.tenantId || req.header("x-tenant-id") || null;
+
+const getTenant = (req) =>
+  req.user?.tenantId ||
+  req.header("x-tenant-id") ||
+  process.env.DEFAULT_TENANT_ID ||
+  "default";
 
 const nextCusIdForTenant = async (tenantId) => {
   const filter = tenantId ? { tenantId } : {};
@@ -72,13 +77,17 @@ const nextCusIdForTenant = async (tenantId) => {
   return "CUS" + String(lastNum + 1).padStart(7, "0");
 };
 
+const zodMessages = (err) => {
+  const list = err?.issues || err?.errors;
+  if (Array.isArray(list) && list.length) return list.map((e) => e.message).join("; ");
+  return err?.message || "Validation error";
+};
+
 /* ----------------------------- Search endpoint ---------------------------- */
-// validate query ?q=
 const SearchQ = z.object({
   q: z.string().trim().min(1, "Enter at least 1 character").max(64, "Too long"),
 });
 
-// light read rate limit just for search
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
@@ -125,7 +134,7 @@ router.get("/search", searchLimiter, async (req, res, next) => {
   } catch (e) {
     if (e?.name === "ZodError") {
       e.status = 400;
-      e.publicMessage = e.errors.map((er) => er.message).join("; ");
+      e.publicMessage = zodMessages(e);
     }
     next(e);
   }
@@ -161,10 +170,21 @@ router.get("/:id", async (req, res, next) => {
 // POST /api/customers
 router.post("/", async (req, res, next) => {
   try {
-    const tenantId = getTenant(req);
+    const tenantId = getTenant(req); // never null now
 
+    // sanitize and STRIP server-managed keys before validating
     const clean = sanitize(req.body);
-    const data = CustomerZ.parse(deepScrub(clean));
+    const {
+      tenantId: _tenantBody,
+      uid: _uidBody,
+      cus_id: _cusBody,
+      _id: _ignoredId,
+      createdAt: _cA,
+      updatedAt: _uA,
+      ...bodyOnly
+    } = clean;
+
+    const data = CustomerZ.parse(deepScrub(bodyOnly));
 
     const cus_id = await nextCusIdForTenant(tenantId);
 
@@ -182,7 +202,7 @@ router.post("/", async (req, res, next) => {
       e.publicMessage = "A customer with that unique field already exists.";
     } else if (e?.name === "ZodError") {
       e.status = 400;
-      e.publicMessage = e.errors.map((er) => er.message).join("; ");
+      e.publicMessage = zodMessages(e);
     }
     next(e);
   }
@@ -194,8 +214,19 @@ router.patch("/:id", async (req, res, next) => {
     const tenantId = getTenant(req);
     const filter = { _id: req.params.id, ...(tenantId ? { tenantId } : {}) };
 
+    // sanitize and STRIP server-managed keys before validating
     const clean = sanitize(req.body);
-    const patch = CustomerUpdateZ.parse(deepScrub(clean));
+    const {
+      tenantId: _tenantBody,
+      uid: _uidBody,
+      cus_id: _cusBody,
+      _id: _ignoredId,
+      createdAt: _cA,
+      updatedAt: _uA,
+      ...bodyOnly
+    } = clean;
+
+    const patch = CustomerUpdateZ.parse(deepScrub(bodyOnly));
 
     const doc = await Customer.findOneAndUpdate(filter, patch, {
       new: true,
@@ -207,7 +238,7 @@ router.patch("/:id", async (req, res, next) => {
   } catch (e) {
     if (e?.name === "ZodError") {
       e.status = 400;
-      e.publicMessage = e.errors.map((er) => er.message).join("; ");
+      e.publicMessage = zodMessages(e);
     }
     next(e);
   }

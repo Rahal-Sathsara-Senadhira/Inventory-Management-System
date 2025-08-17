@@ -6,16 +6,12 @@ const API_BASE = import.meta.env?.VITE_API_BASE || "";
 const fmtMoney = (n) => (isNaN(n) ? "0.00" : Number(n).toFixed(2));
 const safeDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
 
-// helpers for attachments
+// attachments helpers
 const prettyBytes = (n) => {
   if (!Number.isFinite(n)) return "—";
   const u = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < u.length - 1) {
-    v /= 1024;
-    i++;
-  }
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
 };
 const getFileUrl = (u) => (u?.startsWith("http") ? u : `${API_BASE}${u || ""}`);
@@ -46,76 +42,76 @@ export default function ViewSalesOrder() {
   const [itemsById, setItemsById] = useState({});
   const [taxesById, setTaxesById] = useState({});
   const [savingStatus, setSavingStatus] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      setErr("");
-      try {
-        const res = await fetch(`${API_BASE}/api/sales-orders/${id}`);
-        if (!res.ok) throw new Error("Failed to fetch sales order");
-        const data = await res.json();
+  // payment form
+  const [payOpen, setPayOpen] = useState(false);
+  const [savingPay, setSavingPay] = useState(false);
+  const [payForm, setPayForm] = useState({
+    amount: "",
+    method: "cash",
+    reference: "",
+    date: "",
+    note: "",
+  });
+  const [payError, setPayError] = useState("");
 
-        // Normalize filesMeta (could be array or JSON string)
-        let filesMeta = data.filesMeta;
-        if (typeof filesMeta === "string") {
-          try {
-            filesMeta = JSON.parse(filesMeta);
-          } catch {
-            filesMeta = [];
-          }
-        }
-        if (!Array.isArray(filesMeta)) filesMeta = [];
-        if (!alive) return;
+  const reload = async () => {
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await fetch(`${API_BASE}/api/sales-orders/${id}`);
+      if (!res.ok) throw new Error("Failed to fetch sales order");
+      const data = await res.json();
 
-        setOrder({ ...data, filesMeta });
-
-        // Fetch all items referenced by id strings
-        const uniqueItemIds = [
-          ...new Set(
-            (data.items || [])
-              .map((it) => (typeof it.itemId === "object" ? it.itemId?._id : it.itemId))
-              .filter(Boolean)
-              .map(String)
-          ),
-        ];
-        const itemPairs = await Promise.all(
-          uniqueItemIds.map(async (iid) => {
-            try {
-              const r = await fetch(`${API_BASE}/api/items/${iid}`);
-              if (!r.ok) throw new Error();
-              return [iid, await r.json()];
-            } catch {
-              return [iid, null];
-            }
-          })
-        );
-        if (!alive) return;
-        setItemsById(Object.fromEntries(itemPairs));
-
-        // Fetch taxes
-        try {
-          const tr = await fetch(`${API_BASE}/api/taxes`);
-          if (tr.ok) {
-            const tlist = await tr.json();
-            const map = {};
-            (Array.isArray(tlist) ? tlist : []).forEach((t) => (map[t._id] = t));
-            if (alive) setTaxesById(map);
-          }
-        } catch {
-          /* ignore */
-        }
-      } catch (e) {
-        if (alive) setErr(e.message || "Something went wrong");
-      } finally {
-        if (alive) setLoading(false);
+      // normalize filesMeta
+      let filesMeta = data.filesMeta;
+      if (typeof filesMeta === "string") {
+        try { filesMeta = JSON.parse(filesMeta); } catch { filesMeta = []; }
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [id]);
+      if (!Array.isArray(filesMeta)) filesMeta = [];
+      setOrder({ ...data, filesMeta });
+
+      // fetch items referenced by id
+      const uniqueItemIds = [
+        ...new Set(
+          (data.items || [])
+            .map((it) => (typeof it.itemId === "object" ? it.itemId?._id : it.itemId))
+            .filter(Boolean)
+            .map(String)
+        ),
+      ];
+      const pairs = await Promise.all(
+        uniqueItemIds.map(async (iid) => {
+          try {
+            const r = await fetch(`${API_BASE}/api/items/${iid}`);
+            if (!r.ok) throw new Error();
+            return [iid, await r.json()];
+          } catch {
+            return [iid, null];
+          }
+        })
+      );
+      setItemsById(Object.fromEntries(pairs));
+
+      // taxes
+      try {
+        const tr = await fetch(`${API_BASE}/api/taxes`);
+        if (tr.ok) {
+          const list = await tr.json();
+          const map = {};
+          (Array.isArray(list) ? list : []).forEach((t) => (map[t._id] = t));
+          setTaxesById(map);
+        }
+      } catch {}
+    } catch (e) {
+      setErr(e.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { reload(); /* eslint-disable-next-line */ }, [id]);
 
   const lines = useMemo(() => {
     if (!order) return [];
@@ -160,6 +156,17 @@ export default function ViewSalesOrder() {
       ? "bg-red-100 text-red-700"
       : (status || "draft") === "delivered"
       ? "bg-blue-100 text-blue-700"
+      : (status || "draft") === "paid"
+      ? "bg-purple-100 text-purple-700"
+      : "bg-gray-100 text-gray-700";
+
+  const paymentBadge = (paymentStatus) =>
+    (paymentStatus || "unpaid") === "paid"
+      ? "bg-purple-100 text-purple-700"
+      : paymentStatus === "partially_paid"
+      ? "bg-amber-100 text-amber-700"
+      : paymentStatus === "overdue"
+      ? "bg-red-100 text-red-700"
       : "bg-gray-100 text-gray-700";
 
   const updateStatus = async (next) => {
@@ -180,6 +187,88 @@ export default function ViewSalesOrder() {
     }
   };
 
+  const markPaid = async () => {
+    try {
+      setMarkingPaid(true);
+      const r1 = await fetch(`${API_BASE}/api/sales-orders/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
+      });
+      if (!r1.ok) throw new Error("Failed to mark status as paid");
+      const updated1 = await r1.json();
+      await fetch(`${API_BASE}/api/sales-orders/${id}/payment`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "paid" }),
+      }).catch(() => {});
+      setOrder((o) => ({ ...(o || {}), ...updated1, paymentStatus: "paid" }));
+    } catch (e) {
+      alert(e.message || "Failed to mark as paid");
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
+
+  // computed amounts
+  const currency = order?.totals?.currency || "$";
+  const amountPaid = Number(order?.amountPaid || 0);
+  const grand = Number(order?.totals?.grandTotal ?? 0);
+  const remaining = Math.max(grand - amountPaid, 0);
+  const EPS = 0.005;
+
+  // add payment (guard overpay)
+  const addPayment = async () => {
+    const n = Number(payForm.amount);
+    if (!Number.isFinite(n) || n <= 0) {
+      setPayError("Enter a valid amount.");
+      return;
+    }
+    if (n > remaining + EPS) {
+      setPayError(`Amount exceeds remaining balance (${currency} ${fmtMoney(remaining)}).`);
+      return;
+    }
+    setPayError("");
+    try {
+      setSavingPay(true);
+      const res = await fetch(`${API_BASE}/api/sales-orders/${id}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: n,
+          method: payForm.method,
+          reference: payForm.reference || "",
+          date: payForm.date || undefined,
+          note: payForm.note || "",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to add payment");
+      const updated = await res.json();
+      setOrder(updated);
+      setPayForm({ amount: "", method: "cash", reference: "", date: "", note: "" });
+      setPayOpen(false);
+    } catch (e) {
+      alert(e.message || "Failed to add payment");
+    } finally {
+      setSavingPay(false);
+    }
+  };
+
+  // delete a payment
+  const deletePayment = async (paymentId) => {
+    if (!confirm("Delete this payment?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/sales-orders/${id}/payments/${paymentId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete payment");
+      const updated = await res.json();
+      setOrder(updated);
+    } catch (e) {
+      alert(e.message || "Failed to delete payment");
+    }
+  };
+
   if (loading) {
     return <div className="mx-auto max-w-6xl p-4 text-sm text-gray-600">Loading…</div>;
   }
@@ -197,7 +286,7 @@ export default function ViewSalesOrder() {
     );
   }
 
-  const currency = order?.totals?.currency || "$";
+  const balance = remaining;
 
   return (
     <div className="mx-auto max-w-6xl p-4">
@@ -207,7 +296,7 @@ export default function ViewSalesOrder() {
           <h1 className="text-2xl font-bold text-gray-800">
             Sales Order {order.salesOrderNo || ""}
           </h1>
-          <div className="mt-1 flex items-center gap-2 text-sm text-gray-600">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600">
             <span>Order Date: {safeDate(order.salesOrderDate)}</span>
             <span className="text-gray-300">•</span>
             <span>Expected Shipment: {safeDate(order.expectedShipmentDate)}</span>
@@ -218,9 +307,15 @@ export default function ViewSalesOrder() {
                 {order.status || "draft"}
               </span>
             </span>
+            {order.status === "paid" && (
+              <>
+                <span className="text-gray-300">•</span>
+                <span>Paid on: {safeDate(order.paidAt)}</span>
+              </>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={order.status || "draft"}
             onChange={(e) => updateStatus(e.target.value)}
@@ -231,8 +326,21 @@ export default function ViewSalesOrder() {
             <option value="draft">draft</option>
             <option value="confirmed">confirmed</option>
             <option value="delivered">delivered</option>
+            <option value="paid">paid</option>
             <option value="cancelled">cancelled</option>
           </select>
+
+          {order.status !== "paid" && (
+            <button
+              onClick={markPaid}
+              disabled={markingPaid}
+              className="rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-sm text-purple-700 hover:bg-purple-100 disabled:opacity-60"
+              title="Mark as Paid"
+            >
+              {markingPaid ? "Marking…" : "Mark Paid"}
+            </button>
+          )}
+
           <button
             onClick={() => window.print()}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50"
@@ -290,6 +398,163 @@ export default function ViewSalesOrder() {
             <div className="text-gray-500">Price List</div>
             <div className="text-gray-800">{order.priceListId || "—"}</div>
           </div>
+
+          {/* Payment summary + Add Payment */}
+          <div className="mt-4 rounded-lg border border-gray-200 p-3">
+            <div className="mb-1 flex items-center gap-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Payment
+              </div>
+              <span className={`rounded px-2 py-0.5 text-xs ${paymentBadge(order.paymentStatus)}`}>
+                {(order.paymentStatus || "unpaid").replace("_", " ")}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setPayOpen((v) => !v); setPayError(""); }}
+                className="ml-auto rounded-md border border-gray-200 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+              >
+                + Record Payment
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-gray-600">
+                Paid: {currency} {fmtMoney(order.amountPaid || 0)}
+              </span>
+              <span className="text-gray-300">•</span>
+              <span className="text-gray-600">
+                Balance: {currency} {fmtMoney(balance)}
+              </span>
+              {order.paymentDate && (
+                <>
+                  <span className="text-gray-300">•</span>
+                  <span className="text-gray-600">Payment Date: {safeDate(order.paymentDate)}</span>
+                </>
+              )}
+            </div>
+
+            {Array.isArray(order.payments) && order.payments.length > 0 && (
+              <div className="mt-3 space-y-1 text-sm">
+                {order.payments.map((p) => (
+                  <div
+                    key={p._id}
+                    className="flex flex-wrap items-center justify-between rounded border border-gray-100 p-2"
+                  >
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="font-medium">
+                        + {currency} {fmtMoney(p.amount)}
+                      </span>
+                      <span className="text-gray-500">{p.method}</span>
+                      <span className="text-gray-400">•</span>
+                      <span className="text-gray-600">{safeDate(p.date)}</span>
+                      {p.reference && (
+                        <>
+                          <span className="text-gray-400">•</span>
+                          <span className="text-gray-500">Ref: {p.reference}</span>
+                        </>
+                      )}
+                      {p.note && (
+                        <>
+                          <span className="text-gray-400">•</span>
+                          <span className="text-gray-500">Note: {p.note}</span>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      className="text-xs text-red-600 hover:underline"
+                      onClick={() => deletePayment(p._id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {payOpen && (
+              <div className="mt-3 grid grid-cols-1 gap-2 rounded-md border border-gray-200 p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    max={remaining || undefined}
+                    placeholder="Amount"
+                    value={payForm.amount}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const n = Number(v);
+                      if (Number.isFinite(n) && n > remaining) {
+                        setPayError(`Amount exceeds remaining balance (${currency} ${fmtMoney(remaining)}).`);
+                      } else {
+                        setPayError("");
+                      }
+                      setPayForm((f) => ({ ...f, amount: v }));
+                    }}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  />
+                  <select
+                    value={payForm.method}
+                    onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))}
+                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="bank">Bank</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Remaining: {currency} {fmtMoney(remaining)}
+                </div>
+                {!!payError && <div className="text-xs text-red-600">{payError}</div>}
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={payForm.date}
+                    onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  />
+                  <input
+                    placeholder="Reference"
+                    value={payForm.reference}
+                    onChange={(e) => setPayForm((f) => ({ ...f, reference: e.target.value }))}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  />
+                </div>
+                <textarea
+                  rows={2}
+                  placeholder="Note (optional)"
+                  value={payForm.note}
+                  onChange={(e) => setPayForm((f) => ({ ...f, note: e.target.value }))}
+                  className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                />
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setPayOpen(false); setPayError(""); }}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      savingPay ||
+                      !payForm.amount ||
+                      Number(payForm.amount) <= 0 ||
+                      Number(payForm.amount) > remaining + EPS
+                    }
+                    onClick={addPayment}
+                    className="rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {savingPay ? "Saving…" : "Save Payment"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -326,15 +591,9 @@ export default function ViewSalesOrder() {
                   <td className="p-2 tabular-nums">{ln.quantity}</td>
                   <td className="p-2 text-gray-500">{ln._unit || "—"}</td>
                   <td className="p-2 tabular-nums">{fmtMoney(ln.rate)}</td>
-                  <td className="p-2 tabular-nums">
-                    {Number(ln.discount || 0).toFixed(2)}
-                  </td>
+                  <td className="p-2 tabular-nums">{Number(ln.discount || 0).toFixed(2)}</td>
                   <td className="p-2 text-gray-600">
-                    {ln._taxName
-                      ? `${ln._taxName} (${ln._taxRate}%)`
-                      : ln.taxId
-                      ? `${ln._taxRate}%`
-                      : "—"}
+                    {ln._taxName ? `${ln._taxName} (${ln._taxRate}%)` : ln.taxId ? `${ln._taxRate}%` : "—"}
                   </td>
                   <td className="p-2 text-right tabular-nums">
                     {currency} {fmtMoney(ln._total)}
@@ -357,24 +616,14 @@ export default function ViewSalesOrder() {
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-sm font-semibold text-gray-800">Customer Notes</div>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap">
-            {order.notes || "—"}
-          </div>
+          <div className="text-sm text-gray-700 whitespace-pre-wrap">{order.notes || "—"}</div>
 
-          <div className="mt-4 mb-2 text-sm font-semibold text-gray-800">
-            Terms & Conditions
-          </div>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap">
-            {order.terms || "—"}
-          </div>
+          <div className="mt-4 mb-2 text-sm font-semibold text-gray-800">Terms & Conditions</div>
+          <div className="text-sm text-gray-700 whitespace-pre-wrap">{order.terms || "—"}</div>
 
-          {/* Attachments with thumbnails */}
           {Array.isArray(order.filesMeta) && order.filesMeta.length > 0 && (
             <>
-              <div className="mt-4 mb-2 text-sm font-semibold text-gray-800">
-                Attachments
-              </div>
-
+              <div className="mt-4 mb-2 text-sm font-semibold text-gray-800">Attachments</div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {order.filesMeta.map((f, i) => {
                   const url = getFileUrl(f.url);
@@ -409,9 +658,7 @@ export default function ViewSalesOrder() {
                         <div className="text-xs text-gray-500">
                           {(f.type || "—") + " · " + prettyBytes(f.size)}
                         </div>
-                        <div className="mt-1 text-xs text-indigo-600 underline">
-                          Open
-                        </div>
+                        <div className="mt-1 text-xs text-indigo-600 underline">Open</div>
                       </div>
                     </a>
                   );

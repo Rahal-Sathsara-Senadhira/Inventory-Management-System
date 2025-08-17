@@ -1,3 +1,4 @@
+// src/pages/AddSalesOrders.jsx
 import React, { useEffect, useMemo, useState } from "react";
 
 import SalesOrderHeader from "../../components/salesOrders/SalesOrderHeader.jsx";
@@ -17,6 +18,8 @@ const uid = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 const asNumberOrZero = (v) => (v === "" || v === null ? 0 : Number(v));
+const normalizeDate = (v) => (v && String(v).trim() ? v : undefined);
+const idOrUndef = (v) => (v && String(v).trim() ? v : undefined);
 
 /* Small tooltip icon (kept locally, used in summary panel) */
 function InfoIcon({ text }) {
@@ -198,85 +201,94 @@ export default function AddSalesOrders({
 
   /* ---------------- submit ---------------- */
   const handleSubmit = async (status = "draft") => {
-  try {
-    setSaving(true);
-
-    // get next number (safety) – you already set once on mount
-    let nextOrderNumber = form.salesOrderNo || "SO-0001";
     try {
-      const res = await fetch(`${API_BASE}/api/sales-orders/next-order-number`);
-      if (!res.ok) throw new Error("Failed to fetch next order number");
-      const data = await res.json();
-      nextOrderNumber = data.nextOrderNumber || nextOrderNumber;
-    } catch (e) {
-      console.error("Failed to fetch next order number", e);
-    }
+      setSaving(true);
 
-    // upload files if any
-    let filesMeta = [];
-    if (form.files && form.files.length > 0) {
-      filesMeta = await uploadAllFiles(form.files);
-    }
-
-    // IMPORTANT: build items directly from rows (not from calc.calcRows)
-    const itemsPayload = rows.map(({ id, maxQty, ...r }) => ({
-      itemId: r.itemId || null,
-      freeText: r.freeText || "",
-      quantity: Number(r.quantity ?? 0),
-      rate: Number(r.rate ?? 0),
-      discount: Number(r.discount ?? 0),
-      taxId: r.taxId || undefined,
-    }));
-
-    // guard qty vs stock (client-side)
-    for (const r of rows) {
-      if (typeof r.maxQty === "number" && r.quantity > r.maxQty) {
-        throw new Error(`Quantity for one item exceeds available stock (max ${r.maxQty}).`);
+      // safety re-fetch next number
+      let nextOrderNumber = form.salesOrderNo || "SO-0001";
+      try {
+        const res = await fetch(`${API_BASE}/api/sales-orders/next-order-number`);
+        if (!res.ok) throw new Error("Failed to fetch next order number");
+        const data = await res.json();
+        nextOrderNumber = data.nextOrderNumber || nextOrderNumber;
+      } catch (e) {
+        console.error("Failed to fetch next order number", e);
       }
+
+      // upload files (client → Cloudinary)
+      let filesMeta = [];
+      if (form.files && form.files.length > 0) {
+        filesMeta = await uploadAllFiles(form.files);
+      }
+
+      // items payload
+      const itemsPayload = rows.map(({ id, maxQty, ...r }) => ({
+        itemId: r.itemId || null,
+        freeText: r.freeText || "",
+        quantity: Number(r.quantity ?? 0),
+        rate: Number(r.rate ?? 0),
+        discount: Number(r.discount ?? 0),
+        taxId: r.taxId || undefined,
+      }));
+
+      // optional client-side qty guard
+      for (const r of rows) {
+        if (typeof r.maxQty === "number" && r.quantity > r.maxQty) {
+          throw new Error(`Quantity for one item exceeds available stock (max ${r.maxQty}).`);
+        }
+      }
+
+      const payload = {
+        ...form,
+        // normalize IDs/dates that mongoose casts as ObjectId/Date
+        customerId: idOrUndef(form.customerId),
+        salespersonId: form.salespersonId || "",
+        priceListId: form.priceListId || "",
+        salesOrderDate: normalizeDate(form.salesOrderDate),
+        expectedShipmentDate: normalizeDate(form.expectedShipmentDate),
+        status,
+        salesOrderNo: nextOrderNumber,
+        items: itemsPayload,
+        shippingTaxId: idOrUndef(form.shippingTaxId),
+        totals: {
+          subTotal: Number(calc.subTotal.toFixed(2)),
+          taxTotal: Number(calc.taxTotal.toFixed(2)),
+          shippingCharge: Number(form.shippingCharge || 0),
+          adjustment: Number(form.adjustment || 0),
+          roundOff: Number(form.roundOff || 0),
+          grandTotal: Number(calc.grand.toFixed(2)),
+          currency,
+        },
+        filesMeta, // server ignores this if it prefers uploading itself; harmless
+      };
+      delete payload.files;
+
+      if (onSubmit) {
+        await onSubmit(payload);
+      } else {
+        const res = await fetch(`${API_BASE}/api/sales-orders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          let reason = "Failed to save the sales order";
+          try { const j = await res.json(); reason = j?.error || reason; } catch {}
+          throw new Error(reason);
+        }
+      }
+
+      alert("Sales Order saved successfully!");
+      filePreviews.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+      setFilePreviews([]);
+      setForm((f) => ({ ...f, files: [] }));
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Something went wrong");
+    } finally {
+      setSaving(false);
     }
-
-    const payload = {
-      ...form,
-      status,
-      salesOrderNo: nextOrderNumber,
-      items: itemsPayload,
-      shippingTaxId: form.shippingTaxId ? form.shippingTaxId : undefined,
-      totals: {
-        subTotal: Number(calc.subTotal.toFixed(2)),
-        taxTotal: Number(calc.taxTotal.toFixed(2)),
-        shippingCharge: Number(form.shippingCharge || 0),
-        adjustment: Number(form.adjustment || 0),
-        roundOff: Number(form.roundOff || 0),
-        grandTotal: Number(calc.grand.toFixed(2)),
-        currency,
-      },
-      filesMeta,
-    };
-    delete payload.files;
-
-    if (onSubmit) {
-      await onSubmit(payload);
-    } else {
-      const res = await fetch(`${API_BASE}/api/sales-orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Failed to save the sales order");
-    }
-
-    alert("Sales Order saved successfully!");
-    filePreviews.forEach((p) => p.url && URL.revokeObjectURL(p.url));
-    setFilePreviews([]);
-    setForm((f) => ({ ...f, files: [] }));
-  } catch (e) {
-    console.error(e);
-    alert(e.message || "Something went wrong");
-  } finally {
-    setSaving(false);
-  }
-};
-
+  };
 
   return (
     <form className="mx-auto max-w-7xl space-y-6 px-4" onSubmit={(e) => e.preventDefault()}>

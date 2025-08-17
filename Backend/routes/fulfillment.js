@@ -5,66 +5,59 @@ import SalesOrder from "../models/salesOrder.js";
 
 const router = Router();
 
-function ymd(date) {
-  // returns yyyy-mm-dd from a Date
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function startOfDay(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
 }
-
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+function endOfDay(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
 }
 
 router.get("/", async (req, res) => {
   try {
     const { q = "", fulfillmentStatus = "all", page = 1, limit = 100 } = req.query;
 
-    // Eligibility base: must be commercially confirmed
+    // Commercial eligibility
     const match = { status: "confirmed" };
 
-    // 5-day shipment window (inclusive)
+    // 5-day shipment window: [today 00:00 .. (today+5) 23:59]
     const today = new Date();
-    const fiveDays = new Date(today);
-    fiveDays.setDate(fiveDays.getDate() + 5);
+    const end = new Date(today);
+    end.setDate(end.getDate() + 5);
+    match.expectedShipmentDate = { $gte: startOfDay(today), $lte: endOfDay(end) };
 
-    const fromStr = ymd(today);
-    const toStr = ymd(fiveDays);
-
-    // Only include orders with expectedShipmentDate in [today .. today+5]
-    // expectedShipmentDate is a yyyy-mm-dd string in your model
-    match.expectedShipmentDate = { $gte: fromStr, $lte: toStr };
-
-    // Optional UI filter by fulfillmentStatus
+    // Optional fulfillment status
     if (fulfillmentStatus && fulfillmentStatus !== "all") {
       match.fulfillmentStatus = fulfillmentStatus;
     }
 
-    // Hide delivered orders after the day ends
-    // Keep them visible only if delivered today (deliveredAt >= startOfToday)
-    const startToday = startOfToday();
+    // Keep delivered orders only if deliveredAt is today
+    const startToday = startOfDay();
     match.$or = [
       { fulfillmentStatus: { $ne: "delivered" } },
-      { deliveredAt: { $gte: startToday } }, // still show delivered today
+      { deliveredAt: { $gte: startToday } },
     ];
 
-    // Search text
+    // Search text — add as AND condition (so we don't negate the delivered filter)
+    const andConds = [];
     if (q) {
-      match.$or = [
-        ...(match.$or || []),
-        { salesOrderNo: new RegExp(q, "i") },
-        { referenceNo: new RegExp(q, "i") },
-        { fulfillmentAssignee: new RegExp(q, "i") },
-      ];
+      andConds.push({
+        $or: [
+          { salesOrderNo: new RegExp(q, "i") },
+          { referenceNo: new RegExp(q, "i") },
+          { fulfillmentAssignee: new RegExp(q, "i") },
+        ],
+      });
     }
+    const finalMatch = andConds.length ? { $and: [match, ...andConds] } : match;
 
     const skip = (Number(page) - 1) * Number(limit);
 
     const rows = await SalesOrder.aggregate([
-      { $match: match },
+      { $match: finalMatch },
       { $sort: { updatedAt: -1 } },
       { $skip: skip },
       { $limit: Number(limit) },
@@ -89,8 +82,8 @@ router.get("/", async (req, res) => {
           fulfillmentAssignee: 1,
           fulfillmentNotes: 1,
           fulfillmentHistory: 1,
-          expectedShipmentDate: 1, // <-- added for UI verification
-          deliveredAt: 1,          // <-- used to hide after day end
+          expectedShipmentDate: 1,
+          deliveredAt: 1,
           updatedAt: 1,
           createdAt: 1,
           customerName: {
@@ -100,7 +93,7 @@ router.get("/", async (req, res) => {
       },
     ]);
 
-    const total = await SalesOrder.countDocuments(match);
+    const total = await SalesOrder.countDocuments(finalMatch);
     res.json({ rows, total });
   } catch (e) {
     console.error(e);
