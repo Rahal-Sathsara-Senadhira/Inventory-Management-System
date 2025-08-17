@@ -56,6 +56,21 @@ const daysAgo = (n) => {
   return d;
 };
 
+// NEW helpers
+const toDate = (v) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+};
+const withinNextNDays = (dateLike, n = 5) => {
+  const d = toDate(dateLike);
+  if (!d) return false;
+  const today = startOf(new Date());
+  const end = new Date(today);
+  end.setDate(end.getDate() + Number(n || 5));
+  return d >= today && d <= end;
+};
+
 /* ---------------- Recharts helpers ---------------- */
 const money = (n) => `$${fmtMoney(n)}`;
 
@@ -69,26 +84,16 @@ function SalesBarChart({ data }) {
   return (
     <div className="w-full h-56">
       <ResponsiveContainer>
-        <BarChart
-          data={rows}
-          margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
-        >
+        <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="month" />
-          <YAxis
-            tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)}
-          />
+          <YAxis tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
           <Tooltip
             formatter={(val, name) => (name === "Revenue" ? money(val) : val)}
             labelFormatter={(label) => `Month: ${label}`}
           />
           <Legend />
-          <Bar
-            dataKey="revenue"
-            name="Revenue"
-            fill="#6366f1"
-            radius={[6, 6, 0, 0]}
-          >
+          <Bar dataKey="revenue" name="Revenue" fill="#6366f1" radius={[6, 6, 0, 0]}>
             <LabelList
               dataKey="revenue"
               formatter={(v) => (v > 0 ? `$${Math.round(v)}` : "")}
@@ -96,12 +101,7 @@ function SalesBarChart({ data }) {
               className="text-xs"
             />
           </Bar>
-          <Bar
-            dataKey="orders"
-            name="Orders"
-            fill="#10b981"
-            radius={[6, 6, 0, 0]}
-          />
+          <Bar dataKey="orders" name="Orders" fill="#10b981" radius={[6, 6, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -117,20 +117,12 @@ function DeliveriesBarChart({ data }) {
   return (
     <div className="w-full h-40">
       <ResponsiveContainer>
-        <BarChart
-          data={rows}
-          margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
-        >
+        <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="day" />
           <YAxis allowDecimals={false} />
           <Tooltip labelFormatter={(label) => `Day: ${label}`} />
-          <Bar
-            dataKey="deliveries"
-            name="Deliveries"
-            fill="#8b5cf6"
-            radius={[6, 6, 0, 0]}
-          />
+          <Bar dataKey="deliveries" name="Deliveries" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -147,25 +139,14 @@ function TopItemsBar({ data }) {
   return (
     <div className="w-full h-56">
       <ResponsiveContainer>
-        <BarChart
-          data={rows}
-          layout="vertical"
-          margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
-        >
+        <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis type="number" />
           <YAxis type="category" dataKey="name" width={140} />
-          <Tooltip
-            formatter={(val, name) => (name === "Revenue" ? money(val) : val)}
-          />
+          <Tooltip formatter={(val, name) => (name === "Revenue" ? money(val) : val)} />
           <Legend />
           <Bar dataKey="qty" name="Qty" fill="#06b6d4" radius={[0, 6, 6, 0]} />
-          <Bar
-            dataKey="revenue"
-            name="Revenue"
-            fill="#f59e0b"
-            radius={[0, 6, 6, 0]}
-          />
+          <Bar dataKey="revenue" name="Revenue" fill="#f59e0b" radius={[0, 6, 6, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -242,7 +223,13 @@ export default function Dashboard() {
       const grand = Number(o?.totals?.grandTotal ?? 0);
       if (Number.isFinite(grand)) totals.sumGrand += grand;
 
-      const fs = safeStr(o.fulfillmentStatus || "").toLowerCase();
+      // fulfillment snapshot, including inferred "new" for shipping-soon confirmed orders
+      let fs = safeStr(o.fulfillmentStatus || "").toLowerCase();
+      if (!fs) {
+        const isConfirmed = safeStr(o.status).toLowerCase() === "confirmed";
+        const shippingSoon = withinNextNDays(o.expectedShipmentDate, 5);
+        if (isConfirmed && shippingSoon) fs = "new";
+      }
       if (fs && fs in fulfill) fulfill[fs] += 1;
 
       const deliveredAt = o?.deliveredAt ? new Date(o.deliveredAt) : null;
@@ -250,9 +237,7 @@ export default function Dashboard() {
         const key = ymd(startOf(deliveredAt));
         byDayDelivered[key] = (byDayDelivered[key] || 0) + 1;
       } else {
-        const hist = Array.isArray(o.fulfillmentHistory)
-          ? o.fulfillmentHistory
-          : [];
+        const hist = Array.isArray(o.fulfillmentHistory) ? o.fulfillmentHistory : [];
         for (const h of hist) {
           const label = (h?.event || "").toLowerCase();
           if (label.includes("→ delivered") || label === "delivered") {
@@ -271,9 +256,16 @@ export default function Dashboard() {
       value: byDayDelivered[d] || 0,
     }));
     const toBePacked = fulfill.picking + fulfill.new + fulfill.packing;
-    const toBeShipped = fulfill.ready;
+    const toBeShipped = fulfill.ready + fulfill.shipped;
     const toBeDelivered = fulfill.shipped;
-    const toBeInvoiced = fulfill.delivered; // treat delivered as “awaiting invoice”
+
+    // delivered but not paid = needs invoice
+    const deliveredUninvoiced = orders.reduce((acc, o) => {
+      const f = String(o.fulfillmentStatus || "").toLowerCase();
+      const p = String(o.paymentStatus || "").toLowerCase();
+      return acc + (f === "delivered" && p !== "paid" ? 1 : 0);
+    }, 0);
+    const toBeInvoiced = deliveredUninvoiced;
 
     return {
       totals,
@@ -295,9 +287,7 @@ export default function Dashboard() {
         (o.status || "").toLowerCase() === "delivered"
     );
     if (base.length === 0) {
-      base = orders.filter(
-        (o) => (o.status || "").toLowerCase() === "confirmed"
-      );
+      base = orders.filter((o) => (o.status || "").toLowerCase() === "confirmed");
     }
 
     // Top Selling Items (90d)
@@ -330,9 +320,7 @@ export default function Dashboard() {
         itemMap.set(key, prev);
       }
     }
-    const topItems = [...itemMap.values()]
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5);
+    const topItems = [...itemMap.values()].sort((a, b) => b.qty - a.qty).slice(0, 5);
 
     // Sales Report (last 6 months)
     const months = [];
@@ -342,9 +330,7 @@ export default function Dashboard() {
       d.setMonth(d.getMonth() - i);
       months.push(ym(new Date(d.getFullYear(), d.getMonth(), 1)));
     }
-    const monthMap = new Map(
-      months.map((k) => [k, { key: k, value: 0, count: 0 }])
-    );
+    const monthMap = new Map(months.map((k) => [k, { key: k, value: 0, count: 0 }]));
     for (const o of base) {
       const when = o.deliveredAt
         ? new Date(o.deliveredAt)
@@ -390,9 +376,7 @@ export default function Dashboard() {
     // Sales KPIs
     const customers = new Set(
       orders
-        .map((o) =>
-          String(o.customerId?._id || o.customerId || o.customerName || "")
-        )
+        .map((o) => String(o.customerId?._id || o.customerId || o.customerName || ""))
         .filter(Boolean)
     ).size;
     const totalRevenue = orders.reduce(
@@ -400,12 +384,8 @@ export default function Dashboard() {
       0
     );
     const avgOrder = orders.length ? totalRevenue / orders.length : 0;
-    const deliveredRate = totals.confirmed
-      ? (totals.delivered / totals.confirmed) * 100
-      : 0;
-    const cancelRate = totals.countAll
-      ? (totals.cancelled / totals.countAll) * 100
-      : 0;
+    const deliveredRate = totals.confirmed ? (totals.delivered / totals.confirmed) * 100 : 0;
+    const cancelRate = totals.countAll ? (totals.cancelled / totals.countAll) * 100 : 0;
     let unpaid = 0,
       overdue = 0;
     for (const o of orders) {
@@ -484,10 +464,7 @@ export default function Dashboard() {
       </div>
       <div className="flex gap-4 flex-wrap content-start px-6">
         {/* Inventory & Sales Summary */}
-        <WideCard
-          icon={<FaChartBar className="text-3xl text-indigo-500" />}
-          title="Inventory & Sales Summary"
-        >
+        <WideCard icon={<FaChartBar className="text-3xl text-indigo-500" />} title="Inventory & Sales Summary">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-gray-500 flex items-center gap-2">
@@ -495,8 +472,7 @@ export default function Dashboard() {
               </div>
               <div className="text-lg font-semibold">{totals.countAll}</div>
               <div className="text-xs text-gray-500">
-                {totals.confirmed} confirmed • {totals.draft} draft •{" "}
-                {totals.cancelled} cancelled
+                {totals.confirmed} confirmed • {totals.draft} draft • {totals.cancelled} cancelled
               </div>
             </div>
             <div className="rounded-xl border p-3">
@@ -506,9 +482,7 @@ export default function Dashboard() {
               <div className="text-lg font-semibold">
                 ${fmtMoney(totals.sumGrand)}
               </div>
-              <div className="text-xs text-gray-500">
-                Sum of order grand totals
-              </div>
+              <div className="text-xs text-gray-500">Sum of order grand totals</div>
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-gray-500 flex items-center gap-2">
@@ -566,9 +540,7 @@ export default function Dashboard() {
         <div className="bg-white p-4 rounded-xl shadow-md border">
           <div className="flex items-center gap-2 mb-2">
             <FaChartPie className="text-3xl text-orange-500" />
-            <h2 className="font-semibold text-lg">
-              Sales Report (Last 6 months)
-            </h2>
+            <h2 className="font-semibold text-lg">Sales Report (Last 6 months)</h2>
           </div>
           {loading ? (
             <div className="text-sm text-gray-600">Loading…</div>
@@ -577,18 +549,14 @@ export default function Dashboard() {
               <SalesBarChart data={salesSeries} />
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-md border p-2">
-                  <div className="text-xs text-gray-500">
-                    Last Month Revenue
-                  </div>
+                  <div className="text-xs text-gray-500">Last Month Revenue</div>
                   <div className="font-semibold">
                     ${fmtMoney(salesSeries.at(-1)?.value || 0)}
                   </div>
                 </div>
                 <div className="rounded-md border p-2">
                   <div className="text-xs text-gray-500">Last Month Orders</div>
-                  <div className="font-semibold">
-                    {salesSeries.at(-1)?.count || 0}
-                  </div>
+                  <div className="font-semibold">{salesSeries.at(-1)?.count || 0}</div>
                 </div>
               </div>
             </>
@@ -605,18 +573,9 @@ export default function Dashboard() {
             <div className="text-sm text-gray-600">Loading…</div>
           ) : (
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <InfoBox
-                label="Distinct Items (All)"
-                value={productStats.distinctAll}
-              />
-              <InfoBox
-                label="Distinct Items (30d)"
-                value={productStats.distinct30}
-              />
-              <InfoBox
-                label="Avg Lines / Order"
-                value={fmtMoney(productStats.avgLinesPerOrder)}
-              />
+              <InfoBox label="Distinct Items (All)" value={productStats.distinctAll} />
+              <InfoBox label="Distinct Items (30d)" value={productStats.distinct30} />
+              <InfoBox label="Avg Lines / Order" value={fmtMoney(productStats.avgLinesPerOrder)} />
               <InfoBox label="Qty Sold (30d)" value={productStats.qtySold30} />
             </div>
           )}
@@ -633,18 +592,9 @@ export default function Dashboard() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 text-sm">
               <InfoBox label="Customers" value={salesKPIs.customers} />
-              <InfoBox
-                label="Avg Order Value"
-                value={`$${fmtMoney(salesKPIs.avgOrder)}`}
-              />
-              <InfoBox
-                label="Delivered Rate"
-                value={`${fmtMoney(salesKPIs.deliveredRate)}%`}
-              />
-              <InfoBox
-                label="Cancel Rate"
-                value={`${fmtMoney(salesKPIs.cancelRate)}%`}
-              />
+              <InfoBox label="Avg Order Value" value={`$${fmtMoney(salesKPIs.avgOrder)}`} />
+              <InfoBox label="Delivered Rate" value={`${fmtMoney(salesKPIs.deliveredRate)}%`} />
+              <InfoBox label="Cancel Rate" value={`${fmtMoney(salesKPIs.cancelRate)}%`} />
               <InfoBox label="Unpaid" value={salesKPIs.unpaid} />
               <InfoBox label="Overdue" value={salesKPIs.overdue} />
             </div>
