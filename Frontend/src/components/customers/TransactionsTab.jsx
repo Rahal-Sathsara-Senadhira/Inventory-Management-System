@@ -1,10 +1,10 @@
+// src/components/customers/TransactionsTab.jsx
 import CollapsibleSection from "./CollapsableSection";
 
 export default function TransactionTab() {
   return (
     <div className=" bg-white">
       <CollapsibleSection title="Invoices">
-        {/* Replace this with your invoice table or UI */}
         <p className="text-gray-600">Invoices content goes here.</p>
       </CollapsibleSection>
 

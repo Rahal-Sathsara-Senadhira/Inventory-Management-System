@@ -19,6 +19,7 @@ import taxesRouter from "./routes/taxes.js";
 import fulfillmentRouter from "./routes/fulfillment.js";
 import reportsRouter from "./routes/reports.js";
 import fulfillmentPackagesRouter from "./routes/fulfillmentPackages.js";
+import customerLookupRouter from "./routes/customerLookup.js";
 
 const PORT = process.env.PORT || 5000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
@@ -44,17 +45,20 @@ const allowed = (FRONTEND_ORIGIN || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin || allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
-      return cb(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin || allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
+    return cb(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-tenant-id"], // <-- allow tenant header
+  maxAge: 600,
+};
+
+app.use(cors(corsOptions));
+// ❌ Do NOT add app.options("*") or app.options("(.*)") on Express 5.
+// Global cors() will handle preflight automatically.
 
 // Rate limit example
 const searchLimiter = rateLimit({ windowMs: 60_000, max: 120 });
@@ -70,6 +74,7 @@ app.use("/api/salespersons", salespersonsRouter);
 app.use("/api/items", itemsRouter);
 app.use("/api/price-lists", priceListsRouter);
 app.use("/api/taxes", taxesRouter);
+app.use("/api/customer-lookup", customerLookupRouter);
 
 // ✅ Packages board (new)
 app.use("/api/fulfillment-packages", fulfillmentPackagesRouter);

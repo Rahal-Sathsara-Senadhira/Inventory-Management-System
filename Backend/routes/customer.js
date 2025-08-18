@@ -5,6 +5,7 @@ import { z } from "zod";
 import sanitize from "mongo-sanitize";
 import xss from "xss";
 import { v4 as uuidv4 } from "uuid";
+
 import Customer from "../models/customer.js";
 
 const router = Router();
@@ -32,13 +33,21 @@ const CustomerZ = z
     lastName: z.string().trim().max(50).optional().default(""),
     name: z.string().trim().max(140).optional().default(""),
     company_name: z.string().trim().max(140).optional().default(""),
+
     customerEmail: z.string().trim().toLowerCase().email("Invalid email"),
     workPhone: z.string().trim().max(40).optional().default(""),
     mobile: z.string().trim().min(7, "Mobile seems too short").max(40),
+
     receivables: z.coerce.number().optional().default(0),
     unused_credits: z.coerce.number().optional().default(0),
+
     billingAddress: AddressZ.optional().default({}),
     shippingAddress: AddressZ.optional().default({}),
+
+    // additive, optional UI fields
+    paymentTerm: z.string().trim().max(40).optional().default(""),
+    defaultCurrency: z.string().trim().max(10).optional().default("USD"),
+    remarks: z.string().trim().max(1000).optional().default(""),
   })
   .strict();
 
@@ -154,7 +163,21 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-// GET /api/customers/:id
+/* -------------------------- Lookup by business code -------------------------- */
+// Keep this BEFORE `/:id`
+router.get("/by-cusid/:cus_id", async (req, res, next) => {
+  try {
+    const tenantId = getTenant(req);
+    const filter = { cus_id: req.params.cus_id, ...(tenantId ? { tenantId } : {}) };
+    const doc = await Customer.findOne(filter).lean().exec();
+    if (!doc) return res.status(404).json({ error: "Customer not found" });
+    res.json(doc);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /api/customers/:id  (expects Mongo _id)
 router.get("/:id", async (req, res, next) => {
   try {
     const tenantId = getTenant(req);
@@ -172,7 +195,6 @@ router.post("/", async (req, res, next) => {
   try {
     const tenantId = getTenant(req); // never null now
 
-    // sanitize and STRIP server-managed keys before validating
     const clean = sanitize(req.body);
     const {
       tenantId: _tenantBody,
@@ -185,7 +207,6 @@ router.post("/", async (req, res, next) => {
     } = clean;
 
     const data = CustomerZ.parse(deepScrub(bodyOnly));
-
     const cus_id = await nextCusIdForTenant(tenantId);
 
     const doc = await Customer.create({
@@ -208,13 +229,12 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-// PATCH /api/customers/:id
+// PATCH /api/customers/:id  (expects Mongo _id)
 router.patch("/:id", async (req, res, next) => {
   try {
     const tenantId = getTenant(req);
     const filter = { _id: req.params.id, ...(tenantId ? { tenantId } : {}) };
 
-    // sanitize and STRIP server-managed keys before validating
     const clean = sanitize(req.body);
     const {
       tenantId: _tenantBody,
@@ -244,7 +264,7 @@ router.patch("/:id", async (req, res, next) => {
   }
 });
 
-// DELETE /api/customers/:id
+// DELETE /api/customers/:id  (expects Mongo _id)
 router.delete("/:id", async (req, res, next) => {
   try {
     const tenantId = getTenant(req);
@@ -259,5 +279,4 @@ router.delete("/:id", async (req, res, next) => {
 });
 
 export default router;
-// optional named export if you ever want it
 export const customersRouter = router;

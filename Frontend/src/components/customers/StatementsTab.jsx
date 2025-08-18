@@ -1,10 +1,10 @@
+// src/components/customers/StatementsTab.jsx
 import { useRef } from "react";
 import StatementToolbar from "./StatementToolbar";
 import StatementPreview from "./StatementPreview";
 
-const StatementTab=()=> {
+const StatementTab = () => {
   const printRef = useRef();
-
   return (
     <div className="space-y-4">
       <StatementToolbar printRef={printRef} />
@@ -13,6 +13,6 @@ const StatementTab=()=> {
       </div>
     </div>
   );
-}
+};
 
-export default StatementTab
+export default StatementTab;
