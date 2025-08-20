@@ -1,5 +1,7 @@
+// src/App.jsx
 import React from "react";
 import { Routes, Route } from "react-router-dom";
+
 import Home from "./pages/website/Home/Home.jsx";
 import Login from "./pages/Login";
 import DashboardLayout from "./layouts/DashboardLayout";
@@ -19,41 +21,48 @@ import Packages from "./pages/Orders/Packages.jsx";
 import DeliveredPackages from "./pages/Orders/DeliveredPackages.jsx";
 import BillDetails from "./pages/bills/BillDetails.jsx";
 
+import AuthProvider from "./context/AuthContext.jsx";
+import PrivateRoute from "./components/PrivateRoute.jsx";
+
 const App = () => {
   return (
-    <Routes>
-      {/* Public Pages */}
-      <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
+    <AuthProvider>
+      <Routes>
+        {/* Public Pages */}
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
 
-      {/* Protected Area (Layout with Sidebar) */}
-      <Route path="/inventory/:type" element={<DashboardLayout />}>
-        {/* 👇 all child paths are RELATIVE now */}
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="items" element={<InventoryItemsDashboard />} />
-        <Route path="items/add-items" element={<AddItemForm />} />
-        <Route path="items/:id" element={<ItemDetails />} />
-        <Route path="items/:id/edit" element={<EditItemForm />} />
+        {/* Protected Area (guard + your layout) */}
+        <Route element={<PrivateRoute />}>
+          <Route path="/inventory/:type" element={<DashboardLayout />}>
+            {/* 👇 all child paths are RELATIVE now */}
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="items" element={<InventoryItemsDashboard />} />
+            <Route path="items/add-items" element={<AddItemForm />} />
+            <Route path="items/:id" element={<ItemDetails />} />
+            <Route path="items/:id/edit" element={<EditItemForm />} />
 
-        <Route path="salesOrders" element={<SalesOrders />} />
-        <Route path="salesOrders/add-salesOrders" element={<AddSalesOrders />} />
-        <Route path="salesOrders/:id" element={<ViewSalesOrder />} />
+            <Route path="salesOrders" element={<SalesOrders />} />
+            <Route path="salesOrders/add-salesOrders" element={<AddSalesOrders />} />
+            <Route path="salesOrders/:id" element={<ViewSalesOrder />} />
 
-        <Route path="customers" element={<InventorySalesCustomers />} />
-        <Route path="customers/add-customers" element={<AddCustomerForm />} />
-        <Route path="customers/:cus_id" element={<CustomerDetails />} />
+            <Route path="customers" element={<InventorySalesCustomers />} />
+            <Route path="customers/add-customers" element={<AddCustomerForm />} />
+            <Route path="customers/:cus_id" element={<CustomerDetails />} />
 
-        <Route path="itemGroups" element={<InventoryItemGroups />} />
-        <Route path="packages" element={<Packages />} />
-        <Route path="delivered-packages" element={<DeliveredPackages />} />
+            <Route path="itemGroups" element={<InventoryItemGroups />} />
+            <Route path="packages" element={<Packages />} />
+            <Route path="delivered-packages" element={<DeliveredPackages />} />
 
-        {/* Bills nested under /inventory/:type */}
-        <Route path="bills/:billId" element={<BillDetails />} />
-      </Route>
+            {/* Bills nested under /inventory/:type */}
+            <Route path="bills/:billId" element={<BillDetails />} />
+          </Route>
+        </Route>
 
-      {/* If you want bills at root instead, move it out and use absolute path: */}
-      {/* <Route path="/bills/:billId" element={<BillDetails />} /> */}
-    </Routes>
+        {/* If you want bills at root instead, move it out and use absolute path: */}
+        {/* <Route path="/bills/:billId" element={<BillDetails />} /> */}
+      </Routes>
+    </AuthProvider>
   );
 };
 

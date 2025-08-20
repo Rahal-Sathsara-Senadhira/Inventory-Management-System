@@ -22,6 +22,9 @@ import fulfillmentPackagesRouter from "./routes/fulfillmentPackages.js";
 import customerLookupRouter from "./routes/customerLookup.js";
 import customerFinanceRouter from "./routes/customerFinance.js";
 
+// 👉 ADD: auth router
+import authRouter from "./routes/auth.js";
+
 const PORT = process.env.PORT || 5000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
@@ -53,22 +56,20 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-tenant-id"], // <-- allow tenant header
+  allowedHeaders: ["Content-Type", "Authorization", "x-tenant-id"],
   maxAge: 600,
 };
 
 app.use(cors(corsOptions));
-// ❌ Do NOT add app.options("*") or app.options("(.*)") on Express 5.
-// Global cors() will handle preflight automatically.
 
 // Rate limit example
 const searchLimiter = rateLimit({ windowMs: 60_000, max: 120 });
 app.use("/api/items/search", searchLimiter);
 
-// (Optional) local uploads
-// app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), { maxAge: "1d", etag: true }));
-
 // Routes
+// 👉 ADD: auth mount
+app.use("/api/auth", authRouter);
+
 app.use("/api/sales-orders", salesOrdersRouter);
 app.use("/api/customers", customersRouter);
 app.use("/api/salespersons", salespersonsRouter);
