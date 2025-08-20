@@ -17,9 +17,9 @@ import EditItemForm from "./pages/Items/EditItemForm.jsx";
 import ViewSalesOrder from "./pages/Sales/ViewSalesOrder.jsx";
 import Packages from "./pages/Orders/Packages.jsx";
 import DeliveredPackages from "./pages/Orders/DeliveredPackages.jsx";
+import BillDetails from "./pages/bills/BillDetails.jsx";
 
 const App = () => {
-  
   return (
     <Routes>
       {/* Public Pages */}
@@ -28,25 +28,31 @@ const App = () => {
 
       {/* Protected Area (Layout with Sidebar) */}
       <Route path="/inventory/:type" element={<DashboardLayout />}>
+        {/* 👇 all child paths are RELATIVE now */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="items" element={<InventoryItemsDashboard />} />
+        <Route path="items/add-items" element={<AddItemForm />} />
+        <Route path="items/:id" element={<ItemDetails />} />
+        <Route path="items/:id/edit" element={<EditItemForm />} />
+
         <Route path="salesOrders" element={<SalesOrders />} />
         <Route path="salesOrders/add-salesOrders" element={<AddSalesOrders />} />
-        <Route path="itemGroups" element={<InventoryItemGroups />} />
-        <Route path="items/add-items" element={<AddItemForm />} />
+        <Route path="salesOrders/:id" element={<ViewSalesOrder />} />
+
         <Route path="customers" element={<InventorySalesCustomers />} />
         <Route path="customers/add-customers" element={<AddCustomerForm />} />
-        <Route path="/inventory/:type/items/:id" element={<ItemDetails />} />
-        <Route path="/inventory/:type/items/:id/edit" element={<EditItemForm />} />
-        <Route path="/inventory/:type/customers/:cus_id" element={<CustomerDetails />} />
-        <Route path="/inventory/:type/salesOrders/:id" element={<ViewSalesOrder />} />
+        <Route path="customers/:cus_id" element={<CustomerDetails />} />
+
+        <Route path="itemGroups" element={<InventoryItemGroups />} />
         <Route path="packages" element={<Packages />} />
         <Route path="delivered-packages" element={<DeliveredPackages />} />
-        <Route path="/inventory/:type/delivered-packages" element={<DeliveredPackages />} />
 
-
-
+        {/* Bills nested under /inventory/:type */}
+        <Route path="bills/:billId" element={<BillDetails />} />
       </Route>
+
+      {/* If you want bills at root instead, move it out and use absolute path: */}
+      {/* <Route path="/bills/:billId" element={<BillDetails />} /> */}
     </Routes>
   );
 };

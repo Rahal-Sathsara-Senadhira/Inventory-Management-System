@@ -1,4 +1,3 @@
-// src/pages/customers/CustomerDetails.jsx
 import { FaArrowLeft, FaTimes } from "react-icons/fa";
 import { useNavigate, useParams } from "react-router-dom";
 import { useState } from "react";
@@ -14,7 +13,7 @@ const CustomerDetails = () => {
   const { cus_id } = useParams();
   const [activeTab, setActiveTab] = useState("overview");
 
-  const { loading, error, customer, finance } = useCustomerData(cus_id);
+  const { loading, error, customer, finance, orders } = useCustomerData(cus_id);
 
   const displayName =
     customer?.name ||
@@ -40,7 +39,8 @@ const CustomerDetails = () => {
       case "Statements":
         return <StatementsTab customerId={customer?._id} />;
       case "transactions":
-        return <TransactionsTab customerId={customer?._id} />;
+        // 🔽 pass orders so "Bills" can render rows
+        return <TransactionsTab customerId={customer?._id} orders={orders} />;
       case "Mails":
         return <MailsTab customerId={customer?._id} />;
       default:

@@ -1,4 +1,3 @@
-// src/hooks/useCustomerData.js
 import { useEffect, useMemo, useState } from "react";
 
 const API_BASE = import.meta.env?.VITE_API_BASE || "";
@@ -19,7 +18,7 @@ export default function useCustomerData(cus_id) {
 
         const tenantId = localStorage.getItem("tenantId") || "default";
 
-        // 1) fetch the customer by **business cus_id** (new lookup router)
+        // 1) customer by business cus_id
         const cRes = await fetch(
           `${API_BASE}/api/customer-lookup/${encodeURIComponent(cus_id)}`,
           {
@@ -35,10 +34,9 @@ export default function useCustomerData(cus_id) {
         if (!alive) return;
         setCustomer(cJson);
 
-        // 2) fetch related sales orders by _id
+        // 2) related sales orders by _id
         if (cJson?._id) {
           const soRes = await fetch(
-            // ⬇️ IMPORTANT: server mounts `/api/sales-orders` (with hyphen)
             `${API_BASE}/api/sales-orders?customerId=${encodeURIComponent(cJson._id)}`,
             {
               headers: { "x-tenant-id": tenantId },
@@ -49,7 +47,6 @@ export default function useCustomerData(cus_id) {
             const soJson = await soRes.json();
             if (alive) setOrders(Array.isArray(soJson) ? soJson : (soJson?.data ?? []));
           } else if (soRes.status !== 404) {
-            // Only surface non-404 errors to the UI
             throw new Error(`Sales orders fetch failed (${soRes.status})`);
           }
         }
@@ -61,9 +58,7 @@ export default function useCustomerData(cus_id) {
     }
 
     run();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [cus_id]);
 
   const finance = useMemo(() => {

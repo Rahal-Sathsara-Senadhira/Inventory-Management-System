@@ -20,6 +20,7 @@ import fulfillmentRouter from "./routes/fulfillment.js";
 import reportsRouter from "./routes/reports.js";
 import fulfillmentPackagesRouter from "./routes/fulfillmentPackages.js";
 import customerLookupRouter from "./routes/customerLookup.js";
+import customerFinanceRouter from "./routes/customerFinance.js";
 
 const PORT = process.env.PORT || 5000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
@@ -75,6 +76,7 @@ app.use("/api/items", itemsRouter);
 app.use("/api/price-lists", priceListsRouter);
 app.use("/api/taxes", taxesRouter);
 app.use("/api/customer-lookup", customerLookupRouter);
+app.use("/api/customer-finance", customerFinanceRouter);
 
 // ✅ Packages board (new)
 app.use("/api/fulfillment-packages", fulfillmentPackagesRouter);
