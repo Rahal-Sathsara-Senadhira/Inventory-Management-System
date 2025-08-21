@@ -36,13 +36,35 @@ export default function WorkedHours() {
   if (!user) return <div className="p-6">Loading…</div>;
   if (!canAccess(user.role)) return <div className="p-6 text-red-600">Managers & Admins only.</div>;
 
+  // 🔒 who is already paid for this exact From/To period (backed by server uniqueness)
+  const paidSet = useMemo(() => {
+    const s = new Set();
+    for (const p of payments) {
+      const id = String(p?.employeeId?._id || p?.employeeId || "");
+      if (id) s.add(id);
+    }
+    return s;
+  }, [payments]);
+
+  const remaining = useMemo(
+    () => (summary || []).filter((r) => !paidSet.has(String(r.userId))).length,
+    [summary, paidSet]
+  );
+
+  const totalGross = useMemo(
+    () => (summary || []).reduce((s, r) => s + (r.amount || 0), 0),
+    [summary]
+  );
+
   const payOne = async (row) => {
     setMsg("");
     try {
       const res = await api.post("/payroll/pay", {
         from, to, userId: row.userId, method, reference
       });
-      setMsg(`Paid ${row.name} ${row.amount} ${row.currency}`);
+      const created = res.data?.count || 0;
+      if (created > 0) setMsg(`Paid ${row.name} ${row.amount} ${row.currency}`);
+      else setMsg(`${row.name} is already paid for this period.`);
       await load();
     } catch (e) {
       setMsg(e?.response?.data?.error || "Failed to pay");
@@ -50,7 +72,8 @@ export default function WorkedHours() {
   };
 
   const payAll = async () => {
-    if (!window.confirm("Create payments for all listed employees?")) return;
+    if (remaining === 0) return;
+    if (!window.confirm(`Create payments for ${remaining} employee(s)?`)) return;
     setMsg("");
     try {
       const res = await api.post("/payroll/pay", { from, to, method, reference });
@@ -60,11 +83,6 @@ export default function WorkedHours() {
       setMsg(e?.response?.data?.error || "Failed to create payments");
     }
   };
-
-  const totalGross = useMemo(
-    () => (summary || []).reduce((s, r) => s + (r.amount || 0), 0),
-    [summary]
-  );
 
   return (
     <div className="p-6 space-y-6">
@@ -96,7 +114,13 @@ export default function WorkedHours() {
             <label className="block text-xs text-slate-500">Reference</label>
             <input className="border rounded px-3 py-2" placeholder="Txn ID / note" value={reference} onChange={(e) => setReference(e.target.value)} />
           </div>
-          <button onClick={payAll} className="rounded bg-slate-900 text-white px-4 py-2">Pay All</button>
+          <button
+            onClick={payAll}
+            disabled={remaining === 0}
+            className="rounded bg-slate-900 text-white px-4 py-2 disabled:opacity-50"
+          >
+            {remaining === 0 ? "All Paid" : `Pay ${remaining}`}
+          </button>
         </div>
         {msg && <div className="mt-3 text-sm text-slate-700">{msg}</div>}
       </section>
@@ -116,21 +140,31 @@ export default function WorkedHours() {
               </tr>
             </thead>
             <tbody>
-              {summary.map((r) => (
-                <tr key={r.userId}>
-                  <td className="p-2 border">
-                    <div className="font-medium">{r.name}</div>
-                    <div className="text-xs text-slate-500">{r.email}</div>
-                  </td>
-                  <td className="p-2 border text-center">{r.role}</td>
-                  <td className="p-2 border text-center">{r.totalHours.toFixed(2)}</td>
-                  <td className="p-2 border text-center">{r.hourlyRate} {r.currency}/h</td>
-                  <td className="p-2 border text-center font-medium">{r.amount.toFixed(2)} {r.currency}</td>
-                  <td className="p-2 border text-center">
-                    <button className="underline" onClick={() => payOne(r)}>Pay</button>
-                  </td>
-                </tr>
-              ))}
+              {summary.map((r) => {
+                const isPaid = paidSet.has(String(r.userId));
+                return (
+                  <tr key={r.userId}>
+                    <td className="p-2 border">
+                      <div className="font-medium">{r.name}</div>
+                      <div className="text-xs text-slate-500">{r.email}</div>
+                    </td>
+                    <td className="p-2 border text-center">{r.role}</td>
+                    <td className="p-2 border text-center">{r.totalHours.toFixed(2)}</td>
+                    <td className="p-2 border text-center">{r.hourlyRate} {r.currency}/h</td>
+                    <td className="p-2 border text-center font-medium">{r.amount.toFixed(2)} {r.currency}</td>
+                    <td className="p-2 border text-center">
+                      <button
+                        className="underline disabled:opacity-50"
+                        onClick={() => payOne(r)}
+                        disabled={isPaid}
+                        title={isPaid ? "Already paid for this period" : "Create payment"}
+                      >
+                        {isPaid ? "Paid" : "Pay"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {!summary.length && (
                 <tr>
                   <td colSpan="6" className="p-4 text-center text-slate-500">No data for the selected period.</td>
