@@ -2,187 +2,261 @@
 import express from "express";
 import TimeEntry from "../models/timeEntry.js";
 import RoleRate from "../models/roleRate.js";
+import TimeEvent from "../models/timeEvent.js";
 import User, { ROLES } from "../models/user.js";
 import { requireAuth, requireRole } from "../auth/middleware.js";
 
 const router = express.Router();
-
-// Helpers
-const asDateOrNull = (v) => (v ? new Date(v) : null);
 const isAdminOrManager = [ROLES.ADMIN, ROLES.MANAGER];
 
-// Seed default rates if none exist
+const canManagerControl = (targetRole) => [ROLES.INVENTORY, ROLES.SALES].includes(targetRole);
+
 async function ensureDefaultRates() {
   const count = await RoleRate.countDocuments();
   if (count > 0) return;
   const defaults = [
-    { role: ROLES.ADMIN, hourlyRate: 0, currency: "LKR" },
+    { role: ROLES.ADMIN, hourlyRate: 0,     currency: "LKR" },
     { role: ROLES.MANAGER, hourlyRate: 1200, currency: "LKR" },
     { role: ROLES.INVENTORY, hourlyRate: 900, currency: "LKR" },
-    { role: ROLES.SALES, hourlyRate: 1000, currency: "LKR" },
+    { role: ROLES.SALES,     hourlyRate: 1000, currency: "LKR" },
   ];
   await RoleRate.insertMany(defaults);
 }
 
-// --- Employees list (minimal fields) for managers/admins
-router.get(
-  "/employees",
-  requireAuth,
-  requireRole(...isAdminOrManager),
-  async (_req, res) => {
-    const users = await User.find({ isActive: true }, "name email role").sort({ name: 1 });
-    res.json(users);
+function clientIp(req) {
+  const fwd = req.headers["x-forwarded-for"];
+  return (Array.isArray(fwd) ? fwd[0] : (fwd || "")).split(",")[0].trim() || req.ip;
+}
+function clientUA(req) {
+  return req.get("user-agent") || "";
+}
+
+/* -------------------- PRESENCE -------------------- */
+router.get("/presence", requireAuth, requireRole(...isAdminOrManager), async (req, res) => {
+  const actor = req.user;
+
+  const userQuery =
+    actor.role === ROLES.ADMIN
+      ? { isActive: true }
+      : { isActive: true, role: { $in: [ROLES.INVENTORY, ROLES.SALES] } };
+
+  const users = await User.find(userQuery, "name email role").sort({ name: 1 });
+  const ids = users.map((u) => u._id);
+
+  const open = await TimeEntry.find({ userId: { $in: ids }, clockOut: null }, "userId clockIn");
+  const openMap = new Map(open.map((e) => [String(e.userId), e]));
+
+  const list = users.map((u) => {
+    const e = openMap.get(String(u._id));
+    return {
+      _id: u._id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      isOn: !!e,
+      lastClockIn: e?.clockIn || null,
+      canToggle:
+        actor.role === ROLES.ADMIN
+          ? true
+          : actor.role === ROLES.MANAGER && canManagerControl(u.role) && String(actor._id) !== String(u._id),
+    };
+  });
+
+  res.json(list);
+});
+
+/* -------------------- SWITCH (ON/OFF) -------------------- */
+router.post("/switch", requireAuth, requireRole(...isAdminOrManager), async (req, res) => {
+  const actor = req.user;
+  const { userId, on } = req.body || {};
+  if (!userId || typeof on !== "boolean") return res.status(400).json({ error: "userId and on (boolean) required" });
+
+  const target = await User.findById(userId);
+  if (!target || !target.isActive) return res.status(404).json({ error: "Employee not found" });
+
+  // Permissions
+  if (actor.role === ROLES.MANAGER) {
+    if (!canManagerControl(target.role) || String(actor._id) === String(target._id)) {
+      // Audit the denied attempt as a NOOP for traceability
+      await TimeEvent.create({
+        subjectUserId: userId,
+        actorUserId: actor._id,
+        event: on ? "NOOP_ON" : "NOOP_OFF",
+        source: "SWITCH",
+        ip: clientIp(req),
+        userAgent: clientUA(req),
+        note: "Denied: manager cannot control this user",
+      });
+      return res.status(403).json({ error: "Managers can only control Inventory/Sales and not themselves." });
+    }
   }
-);
 
-// --- Rates: get (M,A), upsert (A only)
-router.get(
-  "/rates",
-  requireAuth,
-  requireRole(...isAdminOrManager),
-  async (_req, res) => {
-    await ensureDefaultRates();
-    const rates = await RoleRate.find().sort({ role: 1 });
-    res.json(rates);
-  }
-);
+  const now = new Date();
+  const ip = clientIp(req);
+  const ua = clientUA(req);
 
-router.post(
-  "/rates",
-  requireAuth,
-  requireRole(ROLES.ADMIN),
-  async (req, res) => {
-    const { role, hourlyRate, currency } = req.body || {};
-    if (!Object.values(ROLES).includes(role)) return res.status(400).json({ error: "Invalid role" });
-    if (typeof hourlyRate !== "number" || hourlyRate < 0) return res.status(400).json({ error: "Invalid hourlyRate" });
-
-    const updated = await RoleRate.findOneAndUpdate(
-      { role },
-      { role, hourlyRate, currency: currency || "LKR" },
-      { new: true, upsert: true }
-    );
-    res.json(updated);
-  }
-);
-
-// --- Create time entry (M,A)
-router.post(
-  "/entries",
-  requireAuth,
-  requireRole(...isAdminOrManager),
-  async (req, res) => {
-    const { userId, clockIn, clockOut, note } = req.body || {};
-    if (!userId || !clockIn || !clockOut) return res.status(400).json({ error: "userId, clockIn, clockOut required" });
-
-    const inAt = new Date(clockIn);
-    const outAt = new Date(clockOut);
-    if (!(inAt instanceof Date) || isNaN(inAt)) return res.status(400).json({ error: "Invalid clockIn" });
-    if (!(outAt instanceof Date) || isNaN(outAt)) return res.status(400).json({ error: "Invalid clockOut" });
-    if (outAt <= inAt) return res.status(400).json({ error: "clockOut must be after clockIn" });
-
-    const existsUser = await User.findById(userId);
-    if (!existsUser) return res.status(404).json({ error: "Employee not found" });
-
+  if (on) {
+    const existing = await TimeEntry.findOne({ userId, clockOut: null });
+    if (existing) {
+      await TimeEvent.create({
+        subjectUserId: userId,
+        actorUserId: actor._id,
+        entryId: existing._id,
+        event: "NOOP_ON",
+        source: "SWITCH",
+        ip, userAgent: ua,
+        note: "Already ON",
+      });
+      return res.json({ ok: true, status: "already-on", entryId: existing._id, clockIn: existing.clockIn });
+    }
     const entry = await TimeEntry.create({
       userId,
-      clockIn: inAt,
-      clockOut: outAt,
-      note: note || "",
-      createdBy: req.user._id,
+      clockIn: now,
+      clockOut: null,
+      source: "SWITCH",
+      openedBy: actor._id,
     });
-
-    res.status(201).json(entry);
-  }
-);
-
-// --- List entries with filters (M,A)
-router.get(
-  "/entries",
-  requireAuth,
-  requireRole(...isAdminOrManager),
-  async (req, res) => {
-    const { from, to, userId } = req.query || {};
-    const q = {};
-    if (userId) q.userId = userId;
-    if (from || to) {
-      q.clockIn = {};
-      if (from) q.clockIn.$gte = asDateOrNull(from);
-      if (to) q.clockIn.$lte = asDateOrNull(to);
+    await TimeEvent.create({
+      subjectUserId: userId,
+      actorUserId: actor._id,
+      entryId: entry._id,
+      event: "ON",
+      source: "SWITCH",
+      ip, userAgent: ua,
+    });
+    return res.status(201).json({ ok: true, status: "on", entryId: entry._id, clockIn: entry.clockIn });
+  } else {
+    const existing = await TimeEntry.findOne({ userId, clockOut: null });
+    if (!existing) {
+      await TimeEvent.create({
+        subjectUserId: userId,
+        actorUserId: actor._id,
+        event: "NOOP_OFF",
+        source: "SWITCH",
+        ip, userAgent: ua,
+        note: "Already OFF",
+      });
+      return res.json({ ok: true, status: "already-off" });
     }
-    const list = await TimeEntry.find(q).populate("userId", "name email role").sort({ clockIn: -1 });
-    res.json(list);
-  }
-);
-
-// --- Delete entry (M,A)
-router.delete(
-  "/entries/:id",
-  requireAuth,
-  requireRole(...isAdminOrManager),
-  async (req, res) => {
-    const del = await TimeEntry.findByIdAndDelete(req.params.id);
-    if (!del) return res.status(404).json({ error: "Entry not found" });
-    res.json({ ok: true });
-  }
-);
-
-// --- Summary hours per employee (M,A)
-router.get(
-  "/summary",
-  requireAuth,
-  requireRole(...isAdminOrManager),
-  async (req, res) => {
-    const { from, to } = req.query || {};
-    const match = {};
-    if (from) match.clockIn = { ...(match.clockIn || {}), $gte: asDateOrNull(from) };
-    if (to) match.clockIn = { ...(match.clockIn || {}), $lte: asDateOrNull(to) };
-
-    // Aggregate hours per user
-    const rows = await TimeEntry.aggregate([
-      { $match: match },
-      {
-        $project: {
-          userId: 1,
-          hours: {
-            $divide: [{ $subtract: ["$clockOut", "$clockIn"] }, 1000 * 60 * 60],
-          },
-        },
-      },
-      {
-        $group: {
-          _id: "$userId",
-          totalHours: { $sum: "$hours" },
-        },
-      },
-      { $sort: { totalHours: -1 } },
-    ]);
-
-    // Attach user info & role rates
-    await ensureDefaultRates();
-    const users = await User.find({ _id: { $in: rows.map(r => r._id) } }, "name email role");
-    const rates = await RoleRate.find();
-    const rateMap = Object.fromEntries(rates.map(r => [r.role, { rate: r.hourlyRate, currency: r.currency }]));
-    const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
-
-    const result = rows.map(r => {
-      const u = userMap[String(r._id)];
-      const rr = rateMap[u?.role] || { rate: 0, currency: "LKR" };
-      const hours = Math.round((r.totalHours + Number.EPSILON) * 100) / 100;
-      const amount = Math.round((hours * rr.rate + Number.EPSILON) * 100) / 100;
-      return {
-        userId: r._id,
-        name: u?.name,
-        email: u?.email,
-        role: u?.role,
-        totalHours: hours,
-        hourlyRate: rr.rate,
-        currency: rr.currency,
-        amount,
-      };
+    existing.clockOut = now;
+    existing.closedBy = actor._id;
+    await existing.save();
+    await TimeEvent.create({
+      subjectUserId: userId,
+      actorUserId: actor._id,
+      entryId: existing._id,
+      event: "OFF",
+      source: "SWITCH",
+      ip, userAgent: ua,
     });
-
-    res.json(result);
+    return res.json({ ok: true, status: "off", entryId: existing._id, clockOut: existing.clockOut });
   }
-);
+});
+
+/* -------------------- Rates (view/upsert) -------------------- */
+router.get("/rates", requireAuth, requireRole(...isAdminOrManager), async (_req, res) => {
+  await ensureDefaultRates();
+  const rates = await RoleRate.find().sort({ role: 1 });
+  res.json(rates);
+});
+router.post("/rates", requireAuth, requireRole(ROLES.ADMIN), async (req, res) => {
+  const { role, hourlyRate, currency } = req.body || {};
+  if (!Object.values(ROLES).includes(role)) return res.status(400).json({ error: "Invalid role" });
+  if (typeof hourlyRate !== "number" || hourlyRate < 0) return res.status(400).json({ error: "Invalid hourlyRate" });
+
+  const updated = await RoleRate.findOneAndUpdate(
+    { role },
+    { role, hourlyRate, currency: currency || "LKR" },
+    { new: true, upsert: true }
+  );
+  res.json(updated);
+});
+
+/* -------------------- Audit: list & export -------------------- */
+// List recent audit events (Admin/Manager)
+router.get("/audit", requireAuth, requireRole(...isAdminOrManager), async (req, res) => {
+  const { from, to, userId, limit = 200 } = req.query || {};
+  const q = {};
+  if (userId) q.subjectUserId = userId;
+  if (from || to) {
+    q.ts = {};
+    if (from) q.ts.$gte = new Date(from);
+    if (to) q.ts.$lte = new Date(to);
+  }
+  const list = await TimeEvent.find(q)
+    .sort({ ts: -1, _id: -1 })
+    .limit(Math.min(Number(limit) || 200, 1000))
+    .populate("subjectUserId", "name email role")
+    .populate("actorUserId", "name email role");
+  res.json(list);
+});
+
+// CSV export
+router.get("/audit/export", requireAuth, requireRole(...isAdminOrManager), async (req, res) => {
+  const { from, to, userId, limit = 5000 } = req.query || {};
+  const q = {};
+  if (userId) q.subjectUserId = userId;
+  if (from || to) {
+    q.ts = {};
+    if (from) q.ts.$gte = new Date(from);
+    if (to) q.ts.$lte = new Date(to);
+  }
+  const rows = await TimeEvent.find(q)
+    .sort({ ts: -1, _id: -1 })
+    .limit(Math.min(Number(limit) || 5000, 20000))
+    .populate("subjectUserId", "name email role")
+    .populate("actorUserId", "name email role");
+
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="time_audit_${Date.now()}.csv"`);
+
+  res.write("ts,event,subjectName,subjectEmail,subjectRole,actorName,actorEmail,actorRole,entryId,ip,userAgent,hash,previousHash,note\n");
+  for (const r of rows) {
+    const csv = [
+      new Date(r.ts).toISOString(),
+      r.event,
+      JSON.stringify(r.subjectUserId?.name || ""),
+      JSON.stringify(r.subjectUserId?.email || ""),
+      r.subjectUserId?.role || "",
+      JSON.stringify(r.actorUserId?.name || ""),
+      JSON.stringify(r.actorUserId?.email || ""),
+      r.actorUserId?.role || "",
+      r.entryId || "",
+      JSON.stringify(r.ip || ""),
+      JSON.stringify(r.userAgent || ""),
+      r.hash || "",
+      r.previousHash || "",
+      JSON.stringify(r.note || ""),
+    ].join(",") + "\n";
+    res.write(csv);
+  }
+  res.end();
+});
+
+/* -------------------- Admin: close stuck open shift -------------------- */
+router.post("/admin/close-open", requireAuth, requireRole(ROLES.ADMIN), async (req, res) => {
+  const { userId, note } = req.body || {};
+  if (!userId) return res.status(400).json({ error: "userId required" });
+
+  const open = await TimeEntry.findOne({ userId, clockOut: null });
+  if (!open) return res.json({ ok: true, status: "nothing-open" });
+
+  open.clockOut = new Date();
+  open.closedBy = req.user._id;
+  await open.save();
+
+  await TimeEvent.create({
+    subjectUserId: userId,
+    actorUserId: req.user._id,
+    entryId: open._id,
+    event: "ADMIN_CLOSE",
+    source: "SWITCH",
+    ip: clientIp(req),
+    userAgent: clientUA(req),
+    note: note || "Admin close open shift",
+  });
+
+  res.json({ ok: true, status: "closed", entryId: open._id });
+});
 
 export default router;
