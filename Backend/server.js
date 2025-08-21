@@ -21,6 +21,8 @@ import reportsRouter from "./routes/reports.js";
 import fulfillmentPackagesRouter from "./routes/fulfillmentPackages.js";
 import customerLookupRouter from "./routes/customerLookup.js";
 import customerFinanceRouter from "./routes/customerFinance.js";
+import timekeepingRouter from "./routes/timekeeping.js";
+import payrollRouter from "./routes/payroll.js";
 
 // 👉 ADD: auth router
 import authRouter from "./routes/auth.js";
@@ -78,6 +80,8 @@ app.use("/api/price-lists", priceListsRouter);
 app.use("/api/taxes", taxesRouter);
 app.use("/api/customer-lookup", customerLookupRouter);
 app.use("/api/customer-finance", customerFinanceRouter);
+app.use("/api/timekeeping", timekeepingRouter);
+app.use("/api/payroll", payrollRouter);
 
 // ✅ Packages board (new)
 app.use("/api/fulfillment-packages", fulfillmentPackagesRouter);

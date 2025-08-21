@@ -8,6 +8,7 @@ const Sidebar = () => {
   const [openInventory, setOpenInventory] = useState(false);
   const [openSales, setOpenSales] = useState(false);
   const [openOrders, setOpenOrders] = useState(false);
+  const [openEmployees, setOpenEmployees] = useState(false);
 
   return (
     <div className="w-64 h-screen bg-[#1e293b] text-white flex flex-col sticky">
@@ -163,6 +164,68 @@ const Sidebar = () => {
                 }
               >
                 Delivered Packages
+              </NavLink>
+            </div>
+          )}
+        </div>
+
+        {/* Employees Group */}
+        <div>
+          <button
+            className="flex items-center justify-between w-full p-3 hover:bg-slate-700"
+            onClick={() => setOpenEmployees(!openEmployees)}
+          >
+            <div className="flex items-center gap-2">
+              <FaBoxes /> Users & Roles
+            </div>
+            <FaChevronDown
+              className={`transition-transform ${
+                openEmployees ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          {openEmployees && (
+            <div className="pl-6 space-y-1">
+              <NavLink
+                to={`/inventory/${type}/employees`}
+                className={({ isActive }) =>
+                  `block p-2 rounded hover:bg-slate-700 ${
+                    isActive ? "bg-slate-800" : ""
+                  }`
+                }
+              >
+                Employees
+              </NavLink>
+              <NavLink
+                to={`/inventory/${type}/time-keeping`}
+                className={({ isActive }) =>
+                  `block p-2 rounded hover:bg-slate-700 ${
+                    isActive ? "bg-slate-800" : ""
+                  }`
+                }
+              >
+                Time Keeping
+              </NavLink>
+              <NavLink
+                to={`/inventory/${type}/worked-hours`}
+                className={({ isActive }) =>
+                  `block p-2 rounded hover:bg-slate-700 ${
+                    isActive ? "bg-slate-800" : ""
+                  }`
+                }
+              >
+                Worked Hours
+              </NavLink>
+              <NavLink
+                to={`/inventory/${type}/Roles`}
+                className={({ isActive }) =>
+                  `block p-2 rounded hover:bg-slate-700 ${
+                    isActive ? "bg-slate-800" : ""
+                  }`
+                }
+              >
+                Roles
               </NavLink>
             </div>
           )}

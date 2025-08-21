@@ -23,6 +23,10 @@ import BillDetails from "./pages/bills/BillDetails.jsx";
 
 import AuthProvider from "./context/AuthContext.jsx";
 import PrivateRoute from "./components/PrivateRoute.jsx";
+import Employees from "./pages/Users&Roles/Employees.jsx";
+import TimeKeeping from "./pages/Users&Roles/TimeKeeping.jsx";
+import WorkedHours from "./pages/Users&Roles/WorkedHours.jsx";
+import Roles from "./pages/Users&Roles/Roles.jsx";
 
 const App = () => {
   return (
@@ -53,6 +57,11 @@ const App = () => {
             <Route path="itemGroups" element={<InventoryItemGroups />} />
             <Route path="packages" element={<Packages />} />
             <Route path="delivered-packages" element={<DeliveredPackages />} />
+
+            <Route path="employees" element={<Employees />} />
+            <Route path="time-keeping" element={<TimeKeeping />} />
+            <Route path="worked-hours" element={<WorkedHours />} />
+            <Route path="roles" element={<Roles />} />
 
             {/* Bills nested under /inventory/:type */}
             <Route path="bills/:billId" element={<BillDetails />} />
