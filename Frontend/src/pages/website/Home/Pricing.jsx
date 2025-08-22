@@ -19,7 +19,7 @@ const plans = [
 
 const Pricing = () => {
   return (
-    <section className="bg-white">
+    <section id="pricing" className="bg-white">
       <div className="max-w-7xl mx-auto px-4 lg:px-6 py-16">
         <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0B1C10]">
           Choose The Right Plan For Your Productivity

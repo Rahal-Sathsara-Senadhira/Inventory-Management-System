@@ -6,13 +6,15 @@ import GrowthSection from "./GrowthSection";
 import FeaturesThree from "./FeaturesThree";
 import Pricing from "./Pricing";
 import Footer from "./Footer";
+import ShowcaseSection from "./ShowcaseSection";
+import NewsletterStrip from "./NewsletterStrip";
 
 const Home = () => {
   return (
-    <div className="bg-white">
+    <div className="bg-white overflow-x-hidden">
       <HomeNavbar />
       {/* Hero */}
-      <div className="pt-20">
+      <div className="pt-16 bg-[#0B1C10] inset-0 bg-gradient-to-r ">
         <HeroSection />
       </div>
 
@@ -27,6 +29,9 @@ const Home = () => {
 
       {/* Pricing */}
       <Pricing />
+
+      <ShowcaseSection />
+      <NewsletterStrip />
 
       {/* Footer */}
       <Footer />

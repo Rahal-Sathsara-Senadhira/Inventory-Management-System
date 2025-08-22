@@ -2,12 +2,22 @@ import DashboardBanner from './DashboardBanner2.png'
 import ItemGroupBanner from './InventoryItemGroupsBanner.png'
 
 import Dark_MainLogo from './Dark_MainLogo.png'
+import Light_MainLogo from './Light_MainLogo.png'
 import HeroImage from './HeroImage.png'
+import GrowthSection from './GrowthSection.png'
+import Features1 from './Features1.png'
+import Features2 from './Features2.png'
+import Features3 from './Features3.png'
 
 export const assets ={
     DashboardBanner,
     ItemGroupBanner,
     Dark_MainLogo,
+    Light_MainLogo,
+    GrowthSection,
+    Features1,
+    Features2,
+    Features3,
     HeroImage
 }
 
