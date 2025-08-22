@@ -23,6 +23,7 @@ import customerLookupRouter from "./routes/customerLookup.js";
 import customerFinanceRouter from "./routes/customerFinance.js";
 import timekeepingRouter from "./routes/timekeeping.js";
 import payrollRouter from "./routes/payroll.js";
+import authMeRouter from "./routes/auth.me.js";
 
 // 👉 ADD: auth router
 import authRouter from "./routes/auth.js";
@@ -82,6 +83,8 @@ app.use("/api/customer-lookup", customerLookupRouter);
 app.use("/api/customer-finance", customerFinanceRouter);
 app.use("/api/timekeeping", timekeepingRouter);
 app.use("/api/payroll", payrollRouter);
+app.use("/api/auth", authMeRouter);
+
 
 // ✅ Packages board (new)
 app.use("/api/fulfillment-packages", fulfillmentPackagesRouter);

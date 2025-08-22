@@ -1,3 +1,4 @@
+// src/pages/Users&Roles/WorkedHours.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
@@ -5,8 +6,6 @@ import { useAuth } from "../../context/AuthContext";
 const canAccess = (role) => role === "ADMIN" || role === "MANAGER";
 
 function iso(d) { return new Date(d).toISOString().slice(0, 10); }
-function startOfMonth(d = new Date()) { return iso(new Date(d.getFullYear(), d.getMonth(), 1)); }
-function endOfMonth(d = new Date()) { return iso(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
 function sevenDaysAgo() { const t = new Date(); t.setDate(t.getDate() - 6); return iso(t); }
 
 export default function WorkedHours() {
@@ -18,6 +17,9 @@ export default function WorkedHours() {
   const [method, setMethod] = useState("CASH");
   const [reference, setReference] = useState("");
   const [msg, setMsg] = useState("");
+
+  const today = iso(new Date());
+  const periodFinished = to < today; // only allow paying completed periods
 
   const load = async () => {
     const sum = await api.post("/payroll/run", { from, to });
@@ -36,7 +38,7 @@ export default function WorkedHours() {
   if (!user) return <div className="p-6">Loading…</div>;
   if (!canAccess(user.role)) return <div className="p-6 text-red-600">Managers & Admins only.</div>;
 
-  // 🔒 who is already paid for this exact From/To period (backed by server uniqueness)
+  // who is already paid for this exact From/To period
   const paidSet = useMemo(() => {
     const s = new Set();
     for (const p of payments) {
@@ -58,6 +60,10 @@ export default function WorkedHours() {
 
   const payOne = async (row) => {
     setMsg("");
+    if (!periodFinished) {
+      setMsg("You can only pay once the selected period has finished.");
+      return;
+    }
     try {
       const res = await api.post("/payroll/pay", {
         from, to, userId: row.userId, method, reference
@@ -72,6 +78,10 @@ export default function WorkedHours() {
   };
 
   const payAll = async () => {
+    if (!periodFinished) {
+      setMsg("You can only pay once the selected period has finished.");
+      return;
+    }
     if (remaining === 0) return;
     if (!window.confirm(`Create payments for ${remaining} employee(s)?`)) return;
     setMsg("");
@@ -96,15 +106,29 @@ export default function WorkedHours() {
         <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="block text-xs text-slate-500">From</label>
-            <input type="date" className="border rounded px-3 py-2" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <input
+              type="date"
+              className="border rounded px-3 py-2"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
           </div>
           <div>
             <label className="block text-xs text-slate-500">To</label>
-            <input type="date" className="border rounded px-3 py-2" value={to} onChange={(e) => setTo(e.target.value)} />
+            <input
+              type="date"
+              className="border rounded px-3 py-2"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
           </div>
           <div className="ml-auto">
             <label className="block text-xs text-slate-500">Method</label>
-            <select className="border rounded px-3 py-2" value={method} onChange={(e) => setMethod(e.target.value)}>
+            <select
+              className="border rounded px-3 py-2"
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+            >
               <option value="CASH">Cash</option>
               <option value="BANK">Bank Transfer</option>
               <option value="CHEQUE">Cheque</option>
@@ -112,14 +136,20 @@ export default function WorkedHours() {
           </div>
           <div>
             <label className="block text-xs text-slate-500">Reference</label>
-            <input className="border rounded px-3 py-2" placeholder="Txn ID / note" value={reference} onChange={(e) => setReference(e.target.value)} />
+            <input
+              className="border rounded px-3 py-2"
+              placeholder="Txn ID / note"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
           </div>
           <button
             onClick={payAll}
-            disabled={remaining === 0}
+            disabled={remaining === 0 || !periodFinished}
             className="rounded bg-slate-900 text-white px-4 py-2 disabled:opacity-50"
+            title={!periodFinished ? "Wait until the period ends" : remaining === 0 ? "All paid" : ""}
           >
-            {remaining === 0 ? "All Paid" : `Pay ${remaining}`}
+            {!periodFinished ? "Wait until period ends" : remaining === 0 ? "All Paid" : `Pay ${remaining}`}
           </button>
         </div>
         {msg && <div className="mt-3 text-sm text-slate-700">{msg}</div>}
@@ -156,10 +186,16 @@ export default function WorkedHours() {
                       <button
                         className="underline disabled:opacity-50"
                         onClick={() => payOne(r)}
-                        disabled={isPaid}
-                        title={isPaid ? "Already paid for this period" : "Create payment"}
+                        disabled={isPaid || !periodFinished}
+                        title={
+                          !periodFinished
+                            ? "Wait until the period ends"
+                            : isPaid
+                            ? "Already paid for this period"
+                            : "Create payment"
+                        }
                       >
-                        {isPaid ? "Paid" : "Pay"}
+                        {!periodFinished ? "Locked" : isPaid ? "Paid" : "Pay"}
                       </button>
                     </td>
                   </tr>
@@ -211,11 +247,13 @@ export default function WorkedHours() {
                     <div className="text-xs text-slate-500">{p.employeeId?.email}</div>
                   </td>
                   <td className="p-2 border text-center">
-                    {new Date(p.periodFrom).toLocaleDateString()} → {new Date(p.periodTo).toLocaleDateString()}
+                    {(p.periodFromStr || new Date(p.periodFrom).toLocaleDateString())}
+                    {" → "}
+                    {(p.periodToStr || new Date(p.periodTo).toLocaleDateString())}
                   </td>
-                  <td className="p-2 border text-center">{p.totalHours.toFixed(2)}</td>
+                  <td className="p-2 border text-center">{Number(p.totalHours).toFixed(2)}</td>
                   <td className="p-2 border text-center">{p.hourlyRate} {p.currency}/h</td>
-                  <td className="p-2 border text-center">{p.grossPay.toFixed(2)} {p.currency}</td>
+                  <td className="p-2 border text-center">{Number(p.grossPay).toFixed(2)} {p.currency}</td>
                   <td className="p-2 border text-center">{new Date(p.paidAt).toLocaleString()}</td>
                   <td className="p-2 border text-center">{p.method}</td>
                   <td className="p-2 border text-center">{p.reference || "—"}</td>
